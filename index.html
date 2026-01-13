@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gestão de Contratos - Hernaski</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body data-page="public">
+    <header class="site-header">
+      <div class="logo-area" aria-label="Logo da Imobiliária Hernaski">
+        <div class="logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 120 120" role="img" aria-label="Logo Hernaski">
+            <circle cx="60" cy="60" r="56" />
+            <path d="M35 78V42h12v36h26V42h12v36c0 8-6 14-14 14H49c-8 0-14-6-14-14z" />
+          </svg>
+        </div>
+        <div>
+          <p class="logo-title">Imobiliária Hernaski</p>
+          <p class="logo-subtitle">Gestão de Contratos</p>
+        </div>
+      </div>
+      <a class="admin-toggle" href="admin/login.html">Área da administradora</a>
+    </header>
+
+    <main>
+      <section class="card" aria-labelledby="public-form-title">
+        <div class="card-header">
+          <h1 id="public-form-title">Formulário inicial do contrato</h1>
+          <p>
+            Preencha os dados básicos para iniciar a criação do contrato. Todos os
+            campos são obrigatórios.
+          </p>
+        </div>
+        <form id="public-form">
+          <div class="form-grid">
+            <label>
+              Nome completo
+              <input type="text" name="nome" required />
+            </label>
+            <label>
+              CPF
+              <input type="text" name="cpf" inputmode="numeric" required />
+            </label>
+            <label>
+              RG
+              <input type="text" name="rg" required />
+            </label>
+            <label>
+              Data de nascimento
+              <input type="date" name="dataNascimento" required />
+            </label>
+            <label>
+              Estado civil
+              <select name="estadoCivil" required>
+                <option value="" disabled selected>Selecione</option>
+                <option>Solteiro(a)</option>
+                <option>Casado(a)</option>
+                <option>Divorciado(a)</option>
+                <option>Viúvo(a)</option>
+                <option>União estável</option>
+              </select>
+            </label>
+            <label>
+              Profissão
+              <input type="text" name="profissao" required />
+            </label>
+            <label>
+              E-mail
+              <input type="email" name="email" required />
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="primary">Enviar formulário</button>
+            <p class="helper-text">
+              Você pode enviar quantas vezes precisar. Cada envio cria uma nova
+              solicitação pendente.
+            </p>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>
+        Após enviar, nossa equipe validará os dados para gerar o contrato digital.
+      </p>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>
