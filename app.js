@@ -3,7 +3,8 @@ const ADMIN_KEY = "hernaski-admin-access";
 const ADMIN_USER = "hernaski";
 const ADMIN_PASSWORD = "35890822";
 const SHEET_ID = "1N0Try5gqh9Z-MUL3d6YVRSVsMQrBUxVejttn1B3zmPs";
-const SHEETS_API_KEY = "";
+const SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbxPMP0AsYBqIQ9yrdVCnQySwFLhSyxMlLXnHgzF7wOSQpEoZ1qTCZnivLRjmSFPmg/exec";
 
 const page = document.body.dataset.page;
 
@@ -87,63 +88,45 @@ const downloadContractSummary = (submission) => {
 
 const submitToSheet = async (submission) => {
   if (!submission?.sensitive) return { ok: false, message: "Dados incompletos." };
-  if (!SHEETS_API_KEY) {
+  if (!SCRIPT_URL || SCRIPT_URL.includes("/home/projects/")) {
     return {
       ok: false,
       message:
-        "Chave da API do Google Sheets não configurada em app.js (SHEETS_API_KEY).",
+        "URL do Apps Script não configurada. Publique o script como Web App e atualize SCRIPT_URL em app.js.",
     };
   }
 
-  const range = "A1:AE1";
-  const url =
-    `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}:append` +
-    `?valueInputOption=USER_ENTERED&key=${SHEETS_API_KEY}`;
-
   const { personal, sensitive } = submission;
-  const row = [
-    crypto.randomUUID(),
-    "",
-    "",
-    "",
-    personal.nome,
-    personal.email,
-    "",
-    personal.estadoCivil,
-    "",
-    formatDate(personal.dataNascimento),
-    "",
-    personal.profissao,
-    "",
-    personal.rg,
-    "",
-    personal.cpf,
-    "",
-    "",
-    sensitive.endereco,
-    sensitive.cidade,
-    sensitive.periodo,
-    formatDate(sensitive.dataInicial),
-    sensitive.diaVencimento,
-    sensitive.encargos,
-    "",
-    sensitive.valorBruto,
-    sensitive.valorBrutoExtenso,
-    sensitive.valorBonificado,
-    sensitive.valorBonificadoExtenso,
-    sensitive.caucao,
-    sensitive.caucaoExtenso,
-  ];
+  const payload = {
+    sheetId: SHEET_ID,
+    id: crypto.randomUUID(),
+    nome: personal.nome,
+    email: personal.email,
+    estadoCivil: personal.estadoCivil,
+    nascimento: formatDate(personal.dataNascimento),
+    profissao: personal.profissao,
+    rg: personal.rg,
+    cpf: personal.cpf,
+    endereco: sensitive.endereco,
+    cidade: sensitive.cidade,
+    periodo: sensitive.periodo,
+    dataInicial: formatDate(sensitive.dataInicial),
+    vencimento: sensitive.diaVencimento,
+    encargos: sensitive.encargos,
+    valorBruto: sensitive.valorBruto,
+    valorBrutoExtenso: sensitive.valorBrutoExtenso,
+    valorBonificado: sensitive.valorBonificado,
+    valorBonificadoExtenso: sensitive.valorBonificadoExtenso,
+    caucao: sensitive.caucao,
+    caucaoExtenso: sensitive.caucaoExtenso,
+  };
 
-  const response = await fetch(url, {
+  const response = await fetch(SCRIPT_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      majorDimension: "ROWS",
-      values: [row],
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
