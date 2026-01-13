@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gestão de Contratos - Hernaski</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="logo-area" aria-label="Logo da Imobiliária Hernaski">
+        <div class="logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 120 120" role="img" aria-label="Logo Hernaski">
+            <circle cx="60" cy="60" r="56" />
+            <path d="M35 78V42h12v36h26V42h12v36c0 8-6 14-14 14H49c-8 0-14-6-14-14z" />
+          </svg>
+        </div>
+        <div>
+          <p class="logo-title">Imobiliária Hernaski</p>
+          <p class="logo-subtitle">Gestão de Contratos</p>
+        </div>
+      </div>
+      <button class="admin-toggle" type="button" id="admin-toggle">
+        Área da administradora
+      </button>
+    </header>
+
+    <main>
+      <section class="card" aria-labelledby="public-form-title">
+        <div class="card-header">
+          <h1 id="public-form-title">Formulário inicial do contrato</h1>
+          <p>
+            Preencha os dados básicos para iniciar a criação do contrato. Todos os
+            campos são obrigatórios.
+          </p>
+        </div>
+        <form id="public-form">
+          <div class="form-grid">
+            <label>
+              Nome completo
+              <input type="text" name="nome" required />
+            </label>
+            <label>
+              CPF
+              <input type="text" name="cpf" inputmode="numeric" required />
+            </label>
+            <label>
+              RG
+              <input type="text" name="rg" required />
+            </label>
+            <label>
+              Data de nascimento
+              <input type="date" name="dataNascimento" required />
+            </label>
+            <label>
+              Estado civil
+              <select name="estadoCivil" required>
+                <option value="" disabled selected>Selecione</option>
+                <option>Solteiro(a)</option>
+                <option>Casado(a)</option>
+                <option>Divorciado(a)</option>
+                <option>Viúvo(a)</option>
+                <option>União estável</option>
+              </select>
+            </label>
+            <label>
+              Profissão
+              <input type="text" name="profissao" required />
+            </label>
+            <label>
+              E-mail
+              <input type="email" name="email" required />
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="primary">Enviar formulário</button>
+            <p class="helper-text">
+              Você pode enviar quantas vezes precisar. Cada envio cria uma nova
+              solicitação pendente.
+            </p>
+          </div>
+        </form>
+      </section>
+
+      <section class="card admin-area" id="admin-area" aria-labelledby="admin-title">
+        <div class="card-header">
+          <h2 id="admin-title">Área restrita da administradora</h2>
+          <p>
+            Lista de formulários pendentes e formulário complementar com dados
+            sensíveis.
+          </p>
+        </div>
+
+        <div class="admin-content">
+          <div class="pending-list" aria-live="polite">
+            <h3>Formulários pendentes</h3>
+            <div id="pending-items" class="pending-items"></div>
+          </div>
+
+          <div class="sensitive-form" aria-live="polite">
+            <h3>Complemento de dados sensíveis</h3>
+            <form id="sensitive-form">
+              <div class="form-grid">
+                <label>
+                  Endereço completo
+                  <input type="text" name="endereco" required />
+                </label>
+                <label>
+                  Renda mensal (R$)
+                  <input type="number" name="renda" min="0" step="0.01" required />
+                </label>
+                <label>
+                  Nome do imóvel
+                  <input type="text" name="imovel" required />
+                </label>
+                <label>
+                  Valor do aluguel (R$)
+                  <input type="number" name="valor" min="0" step="0.01" required />
+                </label>
+                <label>
+                  Data de início do contrato
+                  <input type="date" name="inicio" required />
+                </label>
+                <label>
+                  Prazo do contrato (meses)
+                  <input type="number" name="prazo" min="1" required />
+                </label>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="primary">Salvar dados</button>
+                <button type="button" id="generate-contract" class="secondary" disabled>
+                  Gerar contrato
+                </button>
+              </div>
+              <p id="selected-info" class="helper-text">
+                Selecione um formulário pendente para complementar os dados.
+              </p>
+            </form>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>
+        Após gerar o contrato, utilize o modelo oficial da empresa para formalizar o
+        documento final.
+      </p>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>
