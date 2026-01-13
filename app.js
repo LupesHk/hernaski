@@ -4,7 +4,7 @@ const ADMIN_USER = "hernaski";
 const ADMIN_PASSWORD = "35890822";
 const SHEET_ID = "1N0Try5gqh9Z-MUL3d6YVRSVsMQrBUxVejttn1B3zmPs";
 const SCRIPT_URL =
-  "https://script.google.com/u/0/home/projects/1II57ViQBOmsWTcV1xLqdQMfJugvv48Az6PZqLuIrqlAJDCIZTc0uR0TQ/edit";
+  "https://script.google.com/macros/s/AKfycbxPMP0AsYBqIQ9yrdVCnQySwFLhSyxMlLXnHgzF7wOSQpEoZ1qTCZnivLRjmSFPmg/exec";
 
 const page = document.body.dataset.page;
 
