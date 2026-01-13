@@ -6,7 +6,7 @@
     <title>Gestão de Contratos - Hernaski</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body data-page="public">
+  <body>
     <header class="site-header">
       <div class="logo-area" aria-label="Logo da Imobiliária Hernaski">
         <div class="logo-mark" aria-hidden="true">
@@ -20,7 +20,9 @@
           <p class="logo-subtitle">Gestão de Contratos</p>
         </div>
       </div>
-      <a class="admin-toggle" href="admin/login.html">Área da administradora</a>
+      <button class="admin-toggle" type="button" id="admin-toggle">
+        Área da administradora
+      </button>
     </header>
 
     <main>
@@ -79,11 +81,70 @@
           </div>
         </form>
       </section>
+
+      <section class="card admin-area" id="admin-area" aria-labelledby="admin-title">
+        <div class="card-header">
+          <h2 id="admin-title">Área restrita da administradora</h2>
+          <p>
+            Lista de formulários pendentes e formulário complementar com dados
+            sensíveis.
+          </p>
+        </div>
+
+        <div class="admin-content">
+          <div class="pending-list" aria-live="polite">
+            <h3>Formulários pendentes</h3>
+            <div id="pending-items" class="pending-items"></div>
+          </div>
+
+          <div class="sensitive-form" aria-live="polite">
+            <h3>Complemento de dados sensíveis</h3>
+            <form id="sensitive-form">
+              <div class="form-grid">
+                <label>
+                  Endereço completo
+                  <input type="text" name="endereco" required />
+                </label>
+                <label>
+                  Renda mensal (R$)
+                  <input type="number" name="renda" min="0" step="0.01" required />
+                </label>
+                <label>
+                  Nome do imóvel
+                  <input type="text" name="imovel" required />
+                </label>
+                <label>
+                  Valor do aluguel (R$)
+                  <input type="number" name="valor" min="0" step="0.01" required />
+                </label>
+                <label>
+                  Data de início do contrato
+                  <input type="date" name="inicio" required />
+                </label>
+                <label>
+                  Prazo do contrato (meses)
+                  <input type="number" name="prazo" min="1" required />
+                </label>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="primary">Salvar dados</button>
+                <button type="button" id="generate-contract" class="secondary" disabled>
+                  Gerar contrato
+                </button>
+              </div>
+              <p id="selected-info" class="helper-text">
+                Selecione um formulário pendente para complementar os dados.
+              </p>
+            </form>
+          </div>
+        </div>
+      </section>
     </main>
 
     <footer class="site-footer">
       <p>
-        Após enviar, nossa equipe validará os dados para gerar o contrato digital.
+        Após gerar o contrato, utilize o modelo oficial da empresa para formalizar o
+        documento final.
       </p>
     </footer>
 

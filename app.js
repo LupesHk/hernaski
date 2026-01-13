@@ -1,9 +1,14 @@
 const STORAGE_KEY = "hernaski-contratos";
-const ADMIN_KEY = "hernaski-admin-access";
-const ADMIN_USER = "hernaski";
-const ADMIN_PASSWORD = "35890822";
 
-const page = document.body.dataset.page;
+const publicForm = document.getElementById("public-form");
+const adminToggle = document.getElementById("admin-toggle");
+const adminArea = document.getElementById("admin-area");
+const pendingItems = document.getElementById("pending-items");
+const sensitiveForm = document.getElementById("sensitive-form");
+const selectedInfo = document.getElementById("selected-info");
+const generateButton = document.getElementById("generate-contract");
+
+let selectedId = null;
 
 const formatDate = (value) => {
   if (!value) return "";
@@ -28,68 +33,13 @@ const createSubmission = (data) => ({
   sensitive: null,
 });
 
-const setAdminAccess = (value) => {
-  localStorage.setItem(ADMIN_KEY, value ? "true" : "false");
-};
-
-const hasAdminAccess = () => localStorage.getItem(ADMIN_KEY) === "true";
-
-const requireAdmin = () => {
-  if (!hasAdminAccess()) {
-    window.location.href = "login.html";
-  }
-};
-
-const getSubmission = (id) => loadSubmissions().find((item) => item.id === id);
-
-const downloadContractSummary = (submission) => {
-  if (!submission?.sensitive) return;
-  const { personal, sensitive } = submission;
-  const lines = [
-    "Resumo do contrato (prévia)",
-    "============================",
-    `Nome: ${personal.nome}`,
-    `CPF: ${personal.cpf}`,
-    `RG: ${personal.rg}`,
-    `Data de nascimento: ${formatDate(personal.dataNascimento)}`,
-    `Estado civil: ${personal.estadoCivil}`,
-    `Profissão: ${personal.profissao}`,
-    `E-mail: ${personal.email}`,
-    "",
-    `Endereço: ${sensitive.endereco}`,
-    `Cidade: ${sensitive.cidade}`,
-    `Período: ${sensitive.periodo}`,
-    `Data inicial: ${formatDate(sensitive.dataInicial)}`,
-    `Valor bruto: R$ ${sensitive.valorBruto}`,
-    `Valor bruto (extenso): ${sensitive.valorBrutoExtenso}`,
-    `Valor bonificado: R$ ${sensitive.valorBonificado}`,
-    `Valor bonificado (extenso): ${sensitive.valorBonificadoExtenso}`,
-    `Dia de vencimento: ${sensitive.diaVencimento}`,
-    `Caução: R$ ${sensitive.caucao}`,
-    `Caução (extenso): ${sensitive.caucaoExtenso}`,
-    `Encargos: ${sensitive.encargos}`,
-    "",
-    "Finalize o contrato usando o modelo oficial informado.",
-  ];
-
-  const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `contrato-${personal.cpf}.txt`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-};
-
-const renderPendingList = (container) => {
+const renderPending = () => {
   const submissions = loadSubmissions();
-  container.innerHTML = "";
+  pendingItems.innerHTML = "";
 
   if (submissions.length === 0) {
-    container.innerHTML =
-      '<p class="helper-text">Nenhum formulário enviado ainda.</p>';
+    pendingItems.innerHTML =
+      "<p class=\"helper-text\">Nenhum formulário enviado ainda.</p>";
     return;
   }
 
@@ -108,167 +58,84 @@ const renderPendingList = (container) => {
     const status = document.createElement("p");
     status.textContent = `Status: ${item.status.replace("_", " ")}`;
 
-    const action = document.createElement("a");
+    const action = document.createElement("button");
+    action.type = "button";
     action.className = "secondary";
-    action.href = `details.html?id=${item.id}`;
     action.textContent = "Complementar dados";
+    action.addEventListener("click", () => selectSubmission(item.id));
 
     card.append(title, meta, status, action);
-    container.appendChild(card);
+    pendingItems.appendChild(card);
   });
 };
 
-const setupPublicForm = () => {
-  const publicForm = document.getElementById("public-form");
-  if (!publicForm) return;
-  publicForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const formData = new FormData(publicForm);
-    const data = Object.fromEntries(formData.entries());
-    const submissions = loadSubmissions();
-    submissions.unshift(createSubmission(data));
-    saveSubmissions(submissions);
-    publicForm.reset();
-    window.location.href = "success.html";
-  });
-};
+const selectSubmission = (id) => {
+  const submissions = loadSubmissions();
+  const selected = submissions.find((item) => item.id === id);
+  if (!selected) return;
+  selectedId = id;
+  sensitiveForm.reset();
+  generateButton.disabled = true;
 
-const setupAdminLogin = () => {
-  const adminLoginForm = document.getElementById("admin-login-form");
-  if (!adminLoginForm) return;
-  adminLoginForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const formData = new FormData(adminLoginForm);
-    const usuario = formData.get("usuario");
-    const senha = formData.get("senha");
-    if (usuario === ADMIN_USER && senha === ADMIN_PASSWORD) {
-      setAdminAccess(true);
-      adminLoginForm.reset();
-      window.location.href = "pending.html";
-      return;
-    }
-    adminLoginForm.reset();
-    alert("Credenciais inválidas. Verifique com a administradora.");
-  });
-};
-
-const setupPendingPage = () => {
-  const pendingItems = document.getElementById("pending-items");
-  if (!pendingItems) return;
-  requireAdmin();
-  renderPendingList(pendingItems);
-
-  const logoutButton = document.getElementById("logout-button");
-  if (logoutButton) {
-    logoutButton.addEventListener("click", () => {
-      setAdminAccess(false);
-    });
-  }
-};
-
-const setupDetailsPage = () => {
-  const sensitiveForm = document.getElementById("sensitive-form");
-  if (!sensitiveForm) return;
-  requireAdmin();
-
-  const selectedInfo = document.getElementById("selected-info");
-  const statusInfo = document.getElementById("status-info");
-  const generateButton = document.getElementById("generate-contract");
-  const id = new URLSearchParams(window.location.search).get("id");
-  const submission = id ? getSubmission(id) : null;
-
-  if (!submission) {
-    selectedInfo.textContent = "Nenhum formulário encontrado para complementar.";
-    generateButton.disabled = true;
-    sensitiveForm.querySelectorAll("input").forEach((input) => {
-      input.disabled = true;
-    });
-    return;
-  }
-
-  selectedInfo.textContent = `Complementando: ${submission.personal.nome} • CPF ${
-    submission.personal.cpf
-  }.`;
-
-  const valorBonificado = sensitiveForm.elements.namedItem("valorBonificado");
-  const caucao = sensitiveForm.elements.namedItem("caucao");
-  const diaVencimento = sensitiveForm.elements.namedItem("diaVencimento");
-  const encargos = sensitiveForm.elements.namedItem("encargos");
-
-  if (submission.sensitive) {
-    Object.entries(submission.sensitive).forEach(([key, value]) => {
+  if (selected.sensitive) {
+    Object.entries(selected.sensitive).forEach(([key, value]) => {
       const field = sensitiveForm.elements.namedItem(key);
       if (field) field.value = value;
     });
     generateButton.disabled = false;
   }
 
-  if (diaVencimento && !diaVencimento.value) {
-    diaVencimento.value = "10";
-  }
-
-  if (encargos && !encargos.value) {
-    encargos.value = "água, luz, IPTU";
-  }
-
-  if (valorBonificado && caucao) {
-    caucao.value = valorBonificado.value || caucao.value;
-  }
-
-  const syncCaucaoFromBonificado = () => {
-    if (valorBonificado?.value) {
-      caucao.value = valorBonificado.value;
-    }
-  };
-
-  sensitiveForm.addEventListener("input", (event) => {
-    if (event.target?.name === "valorBonificado") {
-      syncCaucaoFromBonificado();
-    }
-  });
-
-  sensitiveForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const formData = new FormData(sensitiveForm);
-    const data = Object.fromEntries(formData.entries());
-    const submissions = loadSubmissions();
-    const updated = submissions.map((item) =>
-      item.id === submission.id
-        ? { ...item, sensitive: data, status: "dados_complementados" }
-        : item
-    );
-    saveSubmissions(updated);
-    statusInfo.textContent = "Dados salvos com sucesso.";
-    generateButton.disabled = false;
-  });
-
-  generateButton.addEventListener("click", () => {
-    const submissions = loadSubmissions();
-    let chosen = null;
-    const updated = submissions.map((item) => {
-      if (item.id !== submission.id) return item;
-      chosen = { ...item, status: "contrato_gerado" };
-      return chosen;
-    });
-    saveSubmissions(updated);
-    statusInfo.textContent =
-      "Contrato marcado como gerado. Utilize o modelo oficial para finalizar.";
-    downloadContractSummary(chosen);
-  });
+  selectedInfo.textContent = `Complementando: ${selected.personal.nome} • CPF ${
+    selected.personal.cpf
+  }.`;
 };
 
-if (page === "public") {
-  setupPublicForm();
-}
+publicForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const formData = new FormData(publicForm);
+  const data = Object.fromEntries(formData.entries());
+  const submissions = loadSubmissions();
+  submissions.unshift(createSubmission(data));
+  saveSubmissions(submissions);
+  publicForm.reset();
+  renderPending();
+});
 
-if (page === "admin-login") {
-  setupAdminLogin();
-}
+sensitiveForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!selectedId) return;
+  const formData = new FormData(sensitiveForm);
+  const data = Object.fromEntries(formData.entries());
+  const submissions = loadSubmissions();
+  const updated = submissions.map((item) =>
+    item.id === selectedId
+      ? { ...item, sensitive: data, status: "dados_complementados" }
+      : item
+  );
+  saveSubmissions(updated);
+  generateButton.disabled = false;
+  renderPending();
+});
 
-if (page === "admin-pending") {
-  setupPendingPage();
-}
+generateButton.addEventListener("click", () => {
+  if (!selectedId) return;
+  const submissions = loadSubmissions();
+  const updated = submissions.map((item) =>
+    item.id === selectedId
+      ? { ...item, status: "contrato_gerado" }
+      : item
+  );
+  saveSubmissions(updated);
+  selectedInfo.textContent =
+    "Contrato marcado como gerado. Utilize o modelo oficial para finalizar.";
+  renderPending();
+});
 
-if (page === "admin-details") {
-  setupDetailsPage();
-}
+adminToggle.addEventListener("click", () => {
+  adminArea.classList.toggle("active");
+  if (adminArea.classList.contains("active")) {
+    adminArea.scrollIntoView({ behavior: "smooth" });
+  }
+});
+
+renderPending();

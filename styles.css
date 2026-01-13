@@ -76,10 +76,6 @@ body {
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s ease;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .admin-toggle:hover {
@@ -178,17 +174,19 @@ button:disabled {
   margin: 0;
 }
 
-.hidden {
+.admin-area {
   display: none;
 }
 
-.login-form {
-  display: grid;
-  gap: 12px;
+.admin-area.active {
+  display: block;
 }
 
-.login-hint code {
-  font-weight: 600;
+.admin-content {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(320px, 2fr);
+  gap: 24px;
+  margin-top: 20px;
 }
 
 .pending-items {
@@ -220,21 +218,6 @@ button:disabled {
   width: 100%;
 }
 
-.pending-card a.secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 10px;
-  width: 100%;
-  text-align: center;
-  text-decoration: none;
-}
-
-.header-actions {
-  display: flex;
-  gap: 12px;
-}
-
 .site-footer {
   padding: 32px 10%;
   text-align: center;
@@ -248,4 +231,7 @@ button:disabled {
     gap: 16px;
   }
 
+  .admin-content {
+    grid-template-columns: 1fr;
+  }
 }
