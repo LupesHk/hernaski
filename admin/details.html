@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dados do contrato - Hernaski</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body data-page="admin-details">
+    <header class="site-header">
+      <div class="logo-area" aria-label="Logo da Imobiliária Hernaski">
+        <div class="logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 120 120" role="img" aria-label="Logo Hernaski">
+            <circle cx="60" cy="60" r="56" />
+            <path d="M35 78V42h12v36h26V42h12v36c0 8-6 14-14 14H49c-8 0-14-6-14-14z" />
+          </svg>
+        </div>
+        <div>
+          <p class="logo-title">Imobiliária Hernaski</p>
+          <p class="logo-subtitle">Dados do contrato</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <a class="secondary" href="pending.html">Voltar às pendências</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="card" aria-labelledby="details-title">
+        <div class="card-header">
+          <h1 id="details-title">Complemento de dados do contrato</h1>
+          <p id="selected-info" class="helper-text"></p>
+        </div>
+        <form id="sensitive-form">
+          <div class="form-grid">
+            <label>
+              Endereço completo
+              <input type="text" name="endereco" required />
+            </label>
+            <label>
+              Cidade
+              <input type="text" name="cidade" required />
+            </label>
+            <label>
+              Período
+              <input type="text" name="periodo" required />
+            </label>
+            <label>
+              Data inicial
+              <input type="date" name="dataInicial" required />
+            </label>
+            <label>
+              Valor bruto (R$)
+              <input type="number" name="valorBruto" min="0" step="0.01" required />
+            </label>
+            <label>
+              Valor bruto em extenso
+              <input type="text" name="valorBrutoExtenso" required />
+            </label>
+            <label>
+              Valor bonificado (R$)
+              <input
+                type="number"
+                name="valorBonificado"
+                min="0"
+                step="0.01"
+                required
+              />
+            </label>
+            <label>
+              Valor bonificado em extenso
+              <input type="text" name="valorBonificadoExtenso" required />
+            </label>
+            <label>
+              Dia de vencimento
+              <input type="number" name="diaVencimento" min="1" max="31" required />
+            </label>
+            <label>
+              Caução (R$)
+              <input type="number" name="caucao" min="0" step="0.01" required />
+            </label>
+            <label>
+              Caução em extenso
+              <input type="text" name="caucaoExtenso" required />
+            </label>
+            <label>
+              Encargos
+              <input type="text" name="encargos" required />
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="primary">Salvar dados</button>
+            <button type="button" id="generate-contract" class="secondary" disabled>
+              Gerar contrato
+            </button>
+          </div>
+          <p id="status-info" class="helper-text"></p>
+        </form>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>Revise todos os dados antes de gerar o contrato.</p>
+    </footer>
+
+    <script src="../app.js"></script>
+  </body>
+</html>
