@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pendências - Hernaski</title>
+    <link rel="stylesheet" href="../styles.css" />
+  </head>
+  <body data-page="admin-pending">
+    <header class="site-header">
+      <div class="logo-area" aria-label="Logo da Imobiliária Hernaski">
+        <div class="logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 120 120" role="img" aria-label="Logo Hernaski">
+            <circle cx="60" cy="60" r="56" />
+            <path d="M35 78V42h12v36h26V42h12v36c0 8-6 14-14 14H49c-8 0-14-6-14-14z" />
+          </svg>
+        </div>
+        <div>
+          <p class="logo-title">Imobiliária Hernaski</p>
+          <p class="logo-subtitle">Pendências de contrato</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <a class="secondary" href="login.html" id="logout-button">Sair</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="card" aria-labelledby="pending-title">
+        <div class="card-header">
+          <h1 id="pending-title">Formulários pendentes</h1>
+          <p>
+            Clique em um formulário para complementar os dados e gerar o contrato.
+          </p>
+        </div>
+        <div id="pending-items" class="pending-items"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>Use o painel para acompanhar o status das solicitações.</p>
+    </footer>
+
+    <script src="../app.js"></script>
+  </body>
+</html>
