@@ -1,12 +1,25 @@
-const STORAGE_KEY = "hernaski-contratos";
+// ================================
+// HERNASKI - app.js (SEM localStorage)
+// Fluxo novo:
+// 1) Cliente envia dados pessoais  -> Apps Script action="lead"  -> cria Solicitação (pendente) + gera HK em Clientes
+// 2) ADM lista pendentes           -> Apps Script GET action="list"
+// 3) ADM complementa e SALVA       -> Apps Script action="update" -> status dados_complementados
+// 4) ADM gera contrato             -> Apps Script action="finalize" -> grava em Contratos + status contrato_gerado -> volta pros pendentes
+// ================================
+
 const ADMIN_KEY = "hernaski-admin-access";
 const ADMIN_USER = "hernaski";
 const ADMIN_PASSWORD = "35890822";
+
 const SHEET_ID = "1N0Try5gqh9Z-MUL3d6YVRSVsMQrBUxVejttn1B3zmPs";
 const SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbxPMP0AsYBqIQ9yrdVCnQySwFLhSyxMlLXnHgzF7wOSQpEoZ1qTCZnivLRjmSFPmg/exec";
 
 const page = document.body.dataset.page;
+
+// =====================
+// Utils
+// =====================
 
 const formatDate = (value) => {
   if (!value) return "";
@@ -19,10 +32,9 @@ const todayISO = () => {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`; // formato certo pro <input type="date">
+  return `${yyyy}-${mm}-${dd}`;
 };
 
-// ====== UTIL: ler número BR (aceita "1.234,56" ou "1234.56") ======
 const parseBRNumber = (raw) => {
   const s = String(raw ?? "").trim();
   if (!s) return NaN;
@@ -30,7 +42,6 @@ const parseBRNumber = (raw) => {
   return Number(normalized);
 };
 
-// ====== UTIL: número -> extenso (pt-BR) para dinheiro ======
 const numeroParaExtensoBRL = (valor) => {
   if (typeof valor !== "number" || isNaN(valor)) return "";
 
@@ -42,14 +53,10 @@ const numeroParaExtensoBRL = (valor) => {
   const extensoCentavos = centavos === 0 ? "" : inteiroPorExtenso(centavos);
 
   const parteReais =
-    reais === 0
-      ? "zero real"
-      : `${extensoReais} ${reais === 1 ? "real" : "reais"}`;
+    reais === 0 ? "zero real" : `${extensoReais} ${reais === 1 ? "real" : "reais"}`;
 
   const parteCentavos =
-    centavos === 0
-      ? ""
-      : `${extensoCentavos} ${centavos === 1 ? "centavo" : "centavos"}`;
+    centavos === 0 ? "" : `${extensoCentavos} ${centavos === 1 ? "centavo" : "centavos"}`;
 
   if (!parteCentavos) return parteReais;
   return `${parteReais} e ${parteCentavos}`;
@@ -129,7 +136,6 @@ const numeroParaExtensoBRL = (valor) => {
   }
 };
 
-// ====== PLUG: vincula campo numérico -> campo extenso ======
 const bindExtenso = (form, numberName, extensoName) => {
   const numEl = form.elements.namedItem(numberName);
   const extEl = form.elements.namedItem(extensoName);
@@ -145,170 +151,121 @@ const bindExtenso = (form, numberName, extensoName) => {
   update();
 };
 
-const loadSubmissions = () => {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  return stored ? JSON.parse(stored) : [];
-};
-
-const saveSubmissions = (items) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-};
-
-const createSubmission = (data) => ({
-  id: crypto.randomUUID(),
-  createdAt: new Date().toISOString(),
-  status: "pendente",
-  personal: data,
-  sensitive: null,
-});
-
-const setAdminAccess = (value) => {
-  localStorage.setItem(ADMIN_KEY, value ? "true" : "false");
-};
-
-const hasAdminAccess = () => localStorage.getItem(ADMIN_KEY) === "true";
-
-const requireAdmin = () => {
-  if (!hasAdminAccess()) {
-    window.location.href = "login.html";
-  }
-};
-
-const getSubmission = (id) => loadSubmissions().find((item) => item.id === id);
-
 const isValidScriptUrl = (url) =>
   Boolean(url) && url.includes("script.google.com/macros/s/") && url.endsWith("/exec");
 
-const submitToSheet = async (submission) => {
-  if (!submission?.sensitive) return { ok: false, message: "Dados incompletos." };
+const setAdminAccess = (value) => localStorage.setItem(ADMIN_KEY, value ? "true" : "false");
+const hasAdminAccess = () => localStorage.getItem(ADMIN_KEY) === "true";
+const requireAdmin = () => {
+  if (!hasAdminAccess()) window.location.href = "login.html";
+};
 
-  if (!isValidScriptUrl(SCRIPT_URL)) {
-    return {
-      ok: false,
-      message:
-        "URL do Apps Script inválida. Publique como Web App e use a URL /exec em SCRIPT_URL.",
-    };
+// =====================
+// API helpers (Apps Script)
+// =====================
+
+const apiGet = async (params) => {
+  if (!isValidScriptUrl(SCRIPT_URL)) throw new Error("SCRIPT_URL inválida.");
+
+  const url = new URL(SCRIPT_URL);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+
+  const res = await fetch(url.toString(), { method: "GET" });
+  if (!res.ok) throw new Error(`Falha na requisição GET (HTTP ${res.status}).`);
+
+  // pode falhar se o GAS devolver texto
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Resposta inválida do Apps Script (GET): ${text}`);
   }
+};
 
-  const { personal, sensitive } = submission;
+// ✅ CORRIGIDO: envia como text/plain (mais compatível com GAS) e mostra erro real
+const apiPost = async (payload) => {
+  if (!isValidScriptUrl(SCRIPT_URL)) throw new Error("SCRIPT_URL inválida.");
 
-  const payload = {
-    sheetId: SHEET_ID,
-    id: crypto.randomUUID(),
-    nome: personal.nome,
-    email: personal.email,
-    estadoCivil: personal.estadoCivil,
-    nascimento: formatDate(personal.dataNascimento),
-    profissao: personal.profissao,
-    rg: personal.rg,
-    cpf: personal.cpf,
-    endereco: sensitive.endereco,
-    cidade: sensitive.cidade,
-    periodo: sensitive.periodo,
-    dataInicial: formatDate(sensitive.dataInicial),
-    vencimento: sensitive.diaVencimento,
-    encargos: sensitive.encargos,
-    valorBruto: sensitive.valorBruto,
-    valorBrutoExtenso: sensitive.valorBrutoExtenso,
-    valorBonificado: sensitive.valorBonificado,
-    valorBonificadoExtenso: sensitive.valorBonificadoExtenso,
-    caucao: sensitive.caucao,
-    caucaoExtenso: sensitive.caucaoExtenso,
-  };
-
-  const response = await fetch(SCRIPT_URL, {
+  const res = await fetch(SCRIPT_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
-    mode: "no-cors",
     body: JSON.stringify(payload),
   });
 
-  if (response.type === "opaque") {
-    return {
-      ok: true,
-      message:
-        "Envio solicitado. Se necessário, verifique o Apps Script para confirmar o registro.",
-    };
+  // Se CORS bloquear a resposta, isso pode virar TypeError antes daqui.
+  // Mas quando chega aqui, vamos tentar ler o texto e parsear.
+  const text = await res.text();
+  let json = null;
+
+  try {
+    json = JSON.parse(text);
+  } catch {
+    // Se não for JSON, ainda mostramos o texto
+    throw new Error(`Resposta inválida do Apps Script (POST): ${text}`);
   }
 
-  if (!response.ok) {
-    return { ok: false, message: "Falha ao enviar dados para a planilha." };
+  if (!json?.ok) {
+    throw new Error(json?.message || "Erro desconhecido no Apps Script.");
   }
+
+  return json;
+};
+
+// ✅ Para o formulário do cliente (evitar NetworkError por CORS)
+const apiPostNoCors = async (payload) => {
+  if (!isValidScriptUrl(SCRIPT_URL)) throw new Error("SCRIPT_URL inválida.");
+
+  await fetch(SCRIPT_URL, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+  });
 
   return { ok: true };
 };
 
-const deleteSubmission = (id) => {
-  const submissions = loadSubmissions();
-  const updated = submissions.filter((item) => item.id !== id);
-  saveSubmissions(updated);
-};
-
-const renderPendingList = (container) => {
-  const submissions = loadSubmissions();
-  container.innerHTML = "";
-
-  if (submissions.length === 0) {
-    container.innerHTML = '<p class="helper-text">Nenhum formulário enviado ainda.</p>';
-    return;
-  }
-
-  submissions.forEach((item) => {
-    const card = document.createElement("div");
-    card.className = "pending-card";
-
-    const title = document.createElement("h4");
-    title.textContent = item.personal.nome;
-
-    const meta = document.createElement("p");
-    meta.textContent = `CPF: ${item.personal.cpf} • Envio: ${formatDate(item.createdAt)}`;
-
-    const status = document.createElement("p");
-    status.textContent = `Status: ${item.status.replace("_", " ")}`;
-
-    const actionRow = document.createElement("div");
-    actionRow.className = "pending-actions";
-
-    const action = document.createElement("a");
-    action.className = "secondary";
-    action.href = `details.html?id=${item.id}`;
-    action.textContent = "Complementar dados";
-
-    const deleteButton = document.createElement("button");
-    deleteButton.type = "button";
-    deleteButton.className = "danger";
-    deleteButton.setAttribute("aria-label", "Excluir solicitação");
-    deleteButton.innerHTML = "🗑️";
-    deleteButton.addEventListener("click", () => {
-      const confirmed = confirm("Tem certeza que deseja excluir esta solicitação?");
-      if (!confirmed) return;
-      deleteSubmission(item.id);
-      renderPendingList(container);
-    });
-
-    actionRow.append(action, deleteButton);
-    card.append(title, meta, status, actionRow);
-    container.appendChild(card);
-  });
-};
+// =====================
+// Public: envia lead (cliente)
+// =====================
 
 const setupPublicForm = () => {
   const publicForm = document.getElementById("public-form");
   if (!publicForm) return;
 
-  publicForm.addEventListener("submit", (event) => {
+  publicForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+
     const formData = new FormData(publicForm);
     const data = Object.fromEntries(formData.entries());
 
-    const submissions = loadSubmissions();
-    submissions.unshift(createSubmission(data));
-    saveSubmissions(submissions);
+    try {
+      await apiPostNoCors({
+        action: "lead",
+        sheetId: SHEET_ID,
+        nome: data.nome || "",
+        cpf: data.cpf || "",
+        rg: data.rg || "",
+        nascimento: formatDate(data.dataNascimento),
+        estadoCivil: data.estadoCivil || "",
+        profissao: data.profissao || "",
+        email: data.email || "",
+      });
 
-    publicForm.reset();
-    window.location.href = "success.html";
+      publicForm.reset();
+      window.location.href = "success.html";
+    } catch (err) {
+      alert(
+        "Não foi possível enviar. Verifique sua conexão e tente novamente.\n\n" +
+          String(err?.message || err)
+      );
+    }
   });
 };
+
+// =====================
+// Admin: Login
+// =====================
 
 const setupAdminLogin = () => {
   const adminLoginForm = document.getElementById("admin-login-form");
@@ -333,19 +290,93 @@ const setupAdminLogin = () => {
   });
 };
 
+// =====================
+// Admin: Lista + filtros
+// =====================
+
+const normalizeStatusLabel = (s) => String(s || "").replaceAll("_", " ");
+
+const renderListFromApi = async (container, filter = "pending") => {
+  container.innerHTML = '<p class="helper-text">Carregando...</p>';
+
+  try {
+    const json = await apiGet({
+      action: "list",
+      sheetId: SHEET_ID,
+      status: filter,
+    });
+
+    const items = Array.isArray(json.items) ? json.items : [];
+    container.innerHTML = "";
+
+    if (items.length === 0) {
+      container.innerHTML = '<p class="helper-text">Nenhuma solicitação encontrada.</p>';
+      return;
+    }
+
+    items.forEach((item) => {
+      const card = document.createElement("div");
+      card.className = "pending-card";
+
+      const title = document.createElement("h4");
+      title.textContent = item.nome || "(Sem nome)";
+
+      const meta = document.createElement("p");
+      meta.textContent = `CPF: ${item.cpf || "-"} • Envio: ${formatDate(item.createdAt)}`;
+
+      const status = document.createElement("p");
+      status.textContent = `Status: ${normalizeStatusLabel(item.status)}`;
+
+      const actionRow = document.createElement("div");
+      actionRow.className = "pending-actions";
+
+      const action = document.createElement("a");
+      action.className = "secondary";
+      action.href = `details.html?requestId=${encodeURIComponent(item.requestId)}`;
+      action.textContent = item.status === "contrato_gerado" ? "Ver detalhes" : "Complementar dados";
+
+      actionRow.append(action);
+      card.append(title, meta, status, actionRow);
+      container.appendChild(card);
+    });
+  } catch (err) {
+    container.innerHTML = `<p class="helper-text">Falha ao carregar. ${String(err?.message || err)}</p>`;
+    console.error(err);
+  }
+};
+
 const setupPendingPage = () => {
   const pendingItems = document.getElementById("pending-items");
   if (!pendingItems) return;
 
   requireAdmin();
-  renderPendingList(pendingItems);
+
+  const filterButtons = document.querySelectorAll("[data-filter]");
+  let currentFilter = "pending";
+
+  const load = (filter) => {
+    currentFilter = filter;
+    renderListFromApi(pendingItems, currentFilter);
+  };
+
+  filterButtons.forEach((btn) => {
+    btn.addEventListener("click", () => load(btn.dataset.filter));
+  });
+
+  load(currentFilter);
 
   const logoutButton = document.getElementById("logout-button");
-  if (logoutButton) {
-    logoutButton.addEventListener("click", () => {
-      setAdminAccess(false);
-    });
-  }
+  if (logoutButton) logoutButton.addEventListener("click", () => setAdminAccess(false));
+};
+
+// =====================
+// Admin: Details (buscar + salvar + gerar)
+// =====================
+
+const fetchOneRequest = async (requestId) => {
+  const json = await apiGet({ action: "list", sheetId: SHEET_ID, status: "all" });
+  const items = Array.isArray(json.items) ? json.items : [];
+  return items.find((x) => String(x.requestId) === String(requestId)) || null;
 };
 
 const setupDetailsPage = () => {
@@ -358,136 +389,231 @@ const setupDetailsPage = () => {
   const statusInfo = document.getElementById("status-info");
   const generateButton = document.getElementById("generate-contract");
 
-  const id = new URLSearchParams(window.location.search).get("id");
-  const submission = id ? getSubmission(id) : null;
+  const requestId = new URLSearchParams(window.location.search).get("requestId");
 
-  if (!submission) {
-    selectedInfo.textContent = "Nenhum formulário encontrado para complementar.";
+  if (!requestId) {
+    selectedInfo.textContent = "requestId ausente na URL.";
     generateButton.disabled = true;
-    sensitiveForm.querySelectorAll("input, select, textarea, button").forEach((el) => {
-      el.disabled = true;
-    });
     return;
   }
 
-  selectedInfo.textContent = `Complementando: ${submission.personal.nome} • CPF ${submission.personal.cpf}.`;
+  // por padrão: só libera depois de salvar
+  generateButton.disabled = true;
 
   const valorBonificado = sensitiveForm.elements.namedItem("valorBonificado");
-const caucao = sensitiveForm.elements.namedItem("caucao");
-const caucaoExtenso = sensitiveForm.elements.namedItem("caucaoExtenso");
+  const caucao = sensitiveForm.elements.namedItem("caucao");
+  const caucaoExtenso = sensitiveForm.elements.namedItem("caucaoExtenso");
 
-const valorBruto = sensitiveForm.elements.namedItem("valorBruto");
-const valorBrutoExtenso = sensitiveForm.elements.namedItem("valorBrutoExtenso");
+  const valorBruto = sensitiveForm.elements.namedItem("valorBruto");
+  const valorBrutoExtenso = sensitiveForm.elements.namedItem("valorBrutoExtenso");
 
-const valorBonificadoExtenso = sensitiveForm.elements.namedItem("valorBonificadoExtenso");
+  const diaVencimento = sensitiveForm.elements.namedItem("diaVencimento");
+  const encargos = sensitiveForm.elements.namedItem("encargos");
+  const periodo = sensitiveForm.elements.namedItem("periodo");
+  const dataInicial = sensitiveForm.elements.namedItem("dataInicial");
 
-const diaVencimento = sensitiveForm.elements.namedItem("diaVencimento");
-const encargos = sensitiveForm.elements.namedItem("encargos");
-const periodo = sensitiveForm.elements.namedItem("periodo");
-const dataInicial = sensitiveForm.elements.namedItem("dataInicial");
+  bindExtenso(sensitiveForm, "valorBruto", "valorBrutoExtenso");
+  bindExtenso(sensitiveForm, "valorBonificado", "valorBonificadoExtenso");
+  bindExtenso(sensitiveForm, "caucao", "caucaoExtenso");
 
-// Vincula automação "por extenso"
-bindExtenso(sensitiveForm, "valorBruto", "valorBrutoExtenso");
-bindExtenso(sensitiveForm, "valorBonificado", "valorBonificadoExtenso");
-bindExtenso(sensitiveForm, "caucao", "caucaoExtenso");
+  if (diaVencimento && !diaVencimento.value) diaVencimento.value = "10";
+  if (encargos && !encargos.value) encargos.value = "energia elétrica, água, IPTU";
+  if (periodo && !periodo.value) periodo.value = "12";
+  if (dataInicial && !dataInicial.value) dataInicial.value = todayISO();
 
-// Defaults
-if (diaVencimento && !diaVencimento.value) diaVencimento.value = "10";
-if (encargos && !encargos.value) encargos.value = "energia elétrica, água, IPTU";
-if (periodo && !periodo.value) periodo.value = "12";
-if (dataInicial && !dataInicial.value) dataInicial.value = todayISO();
+  const setCaucaoAndExtenso = (valueNumberOrString) => {
+    if (!caucao) return;
 
-// Atualiza caução (número) e caução extenso juntos
-const setCaucaoAndExtenso = (valueNumberOrString) => {
-  if (!caucao) return;
+    caucao.value = String(valueNumberOrString ?? "");
+    if (caucaoExtenso) {
+      const n = parseBRNumber(caucao.value);
+      caucaoExtenso.value = isNaN(n) ? "" : numeroParaExtensoBRL(n);
+    }
+  };
 
-  caucao.value = String(valueNumberOrString ?? "");
+  const calcularValorBruto = () => {
+    if (!valorBonificado || !valorBruto) return;
 
-  if (caucaoExtenso) {
-    const n = parseBRNumber(caucao.value);
-    caucaoExtenso.value = isNaN(n) ? "" : numeroParaExtensoBRL(n);
-  }
-};
+    const vb = parseBRNumber(valorBonificado.value);
+    if (isNaN(vb) || vb <= 0) return;
 
-// Caução padrão = valor bonificado (se caução estiver vazia)
-if (valorBonificado && caucao && !caucao.value) {
-  setCaucaoAndExtenso(valorBonificado.value);
-}
+    const bruto = vb / 0.9;
+    valorBruto.value = bruto.toFixed(2);
 
-// Valor bruto = bonificado / 0.9 (e atualiza extenso do bruto também)
-const calcularValorBruto = () => {
-  if (!valorBonificado || !valorBruto) return;
+    if (valorBrutoExtenso) {
+      valorBrutoExtenso.value = numeroParaExtensoBRL(bruto);
+    }
+  };
 
-  const vb = parseBRNumber(valorBonificado.value);
-  if (isNaN(vb) || vb <= 0) return;
+  const syncCaucaoFromBonificado = () => {
+    if (!valorBonificado?.value) return;
+    setCaucaoAndExtenso(valorBonificado.value);
+  };
 
-  const bruto = vb / 0.9;
-  valorBruto.value = bruto.toFixed(2);
+  sensitiveForm.addEventListener("input", (event) => {
+    if (event.target?.name === "valorBonificado") {
+      calcularValorBruto();
+      syncCaucaoFromBonificado();
+    }
+  });
 
-  if (valorBrutoExtenso) {
-    valorBrutoExtenso.value = numeroParaExtensoBRL(bruto);
-  }
-};
+  (async () => {
+    try {
+      const item = await fetchOneRequest(requestId);
 
-// Sync: quando bonificado muda -> recalcula bruto e atualiza caução + extenso
-const syncCaucaoFromBonificado = () => {
-  if (!valorBonificado?.value) return;
-  setCaucaoAndExtenso(valorBonificado.value);
-};
+      if (!item) {
+        selectedInfo.textContent = "Solicitação não encontrada.";
+        generateButton.disabled = true;
 
-// Um único listener
-sensitiveForm.addEventListener("input", (event) => {
-  if (event.target?.name === "valorBonificado") {
-    calcularValorBruto();
-    syncCaucaoFromBonificado(); // <-- agora atualiza caução + cauçãoExtenso
-  }
-});
+        sensitiveForm
+          .querySelectorAll("input, select, textarea, button")
+          .forEach((el) => (el.disabled = true));
+        return;
+      }
 
+      selectedInfo.textContent = `Complementando: ${item.nome} • CPF ${item.cpf}.`;
 
-  sensitiveForm.addEventListener("submit", (event) => {
+      const map = {
+        endereco: item.endereco,
+        cidade: item.cidade,
+        periodo: item.periodo,
+        dataInicial: item.dataInicial ? item.dataInicial : "",
+        diaVencimento: item.vencimento,
+        encargos: item.encargos,
+        valorBonificado: item.valorBonificado,
+        valorBonificadoExtenso: item.valorBonificadoExtenso,
+        valorBruto: item.valorBruto,
+        valorBrutoExtenso: item.valorBrutoExtenso,
+        caucao: item.caucao,
+        caucaoExtenso: item.caucaoExtenso,
+      };
+
+      Object.entries(map).forEach(([k, v]) => {
+        const el = sensitiveForm.elements.namedItem(k);
+        if (el && v) el.value = v;
+      });
+
+      // defaults extras, se vier vazio do GAS
+      if (periodo && !periodo.value) periodo.value = "12";
+      if (dataInicial && !dataInicial.value) dataInicial.value = todayISO();
+
+      if (valorBonificado && caucao && !caucao.value) setCaucaoAndExtenso(valorBonificado.value);
+
+      if (item.status === "contrato_gerado") {
+        generateButton.disabled = false;
+        statusInfo.textContent = "Este contrato já foi gerado.";
+      } else if (item.status === "dados_complementados") {
+        generateButton.disabled = false;
+        statusInfo.textContent = "Dados já complementados. Você já pode gerar o contrato.";
+      } else {
+        generateButton.disabled = true;
+        statusInfo.textContent = "Salve o complemento para liberar o botão de gerar contrato.";
+      }
+    } catch (err) {
+      console.error(err);
+      selectedInfo.textContent = "Falha ao buscar solicitação.";
+      generateButton.disabled = true;
+    }
+  })();
+
+  // SALVAR COMPLEMENTO
+  sensitiveForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const formData = new FormData(sensitiveForm);
-    const data = Object.fromEntries(formData.entries());
+    calcularValorBruto();
+    syncCaucaoFromBonificado();
 
-    const submissions = loadSubmissions();
-    const updated = submissions.map((item) =>
-      item.id === submission.id
-        ? { ...item, sensitive: data, status: "dados_complementados" }
-        : item
-    );
+    const d2 = Object.fromEntries(new FormData(sensitiveForm).entries());
 
-    saveSubmissions(updated);
-    statusInfo.textContent = "Dados salvos com sucesso.";
-    generateButton.disabled = false;
+    try {
+      statusInfo.textContent = "Salvando...";
+
+      await apiPost({
+        action: "update",
+        sheetId: SHEET_ID,
+        requestId,
+
+        endereco: d2.endereco || "",
+        cidade: d2.cidade || "",
+        periodo: d2.periodo || "",
+        dataInicial: d2.dataInicial || "",
+        vencimento: d2.diaVencimento || "",
+        encargos: d2.encargos || "",
+        valorBruto: d2.valorBruto || "",
+        valorBrutoExtenso: d2.valorBrutoExtenso || "",
+        valorBonificado: d2.valorBonificado || "",
+        valorBonificadoExtenso: d2.valorBonificadoExtenso || "",
+        caucao: d2.caucao || "",
+        caucaoExtenso: d2.caucaoExtenso || "",
+      });
+
+      statusInfo.textContent = "Dados salvos com sucesso.";
+      generateButton.disabled = false;
+    } catch (err) {
+      console.error(err);
+      statusInfo.textContent = `Erro ao salvar: ${String(err?.message || err)}`;
+    }
   });
 
-  generateButton.addEventListener("click", () => {
-    const submissions = loadSubmissions();
-    let chosen = null;
+  // GERAR CONTRATO
+  generateButton.addEventListener("click", async () => {
+    generateButton.disabled = true;
 
-    const updated = submissions.map((item) => {
-      if (item.id !== submission.id) return item;
-      chosen = { ...item, status: "contrato_gerado" };
-      return chosen;
-    });
+    let item = null;
+    try {
+      item = await fetchOneRequest(requestId);
+    } catch (_) {}
 
-    saveSubmissions(updated);
+    const d2 = Object.fromEntries(new FormData(sensitiveForm).entries());
 
-    statusInfo.textContent =
-      "Contrato marcado como gerado. Utilize o modelo oficial para finalizar.";
+    try {
+      statusInfo.textContent = "Gerando contrato...";
 
-    // REMOVIDO: download de arquivo .txt
+      await apiPost({
+        action: "finalize",
+        sheetId: SHEET_ID,
+        requestId,
 
-    submitToSheet(chosen).then((result) => {
-      statusInfo.textContent = result.ok
-        ? "Contrato gerado e dados enviados para a planilha."
-        : result.message;
-    });
+        id: crypto.randomUUID(),
+        nome: item?.nome || "",
+        email: item?.email || "",
+        estadoCivil: item?.estadoCivil || "",
+        nascimento: item?.nascimento || "",
+        profissao: item?.profissao || "",
+        rg: item?.rg || "",
+        cpf: item?.cpf || "",
+
+        endereco: d2.endereco || "",
+        cidade: d2.cidade || "",
+        periodo: d2.periodo || "",
+        dataInicial: d2.dataInicial || "",
+        vencimento: d2.diaVencimento || "",
+        encargos: d2.encargos || "",
+        valorBruto: d2.valorBruto || "",
+        valorBrutoExtenso: d2.valorBrutoExtenso || "",
+        valorBonificado: d2.valorBonificado || "",
+        valorBonificadoExtenso: d2.valorBonificadoExtenso || "",
+        caucao: d2.caucao || "",
+        caucaoExtenso: d2.caucaoExtenso || "",
+      });
+
+      statusInfo.textContent = "Contrato gerado e dados enviados para a planilha.";
+
+      setTimeout(() => {
+        window.location.href = "pending.html";
+      }, 500);
+    } catch (err) {
+      console.error(err);
+      statusInfo.textContent = `Erro ao gerar: ${String(err?.message || err)}`;
+      generateButton.disabled = false;
+    }
   });
 };
 
-// Router simples
+// =====================
+// Router
+// =====================
+
 if (page === "public") setupPublicForm();
 if (page === "admin-login") setupAdminLogin();
 if (page === "admin-pending") setupPendingPage();
