@@ -229,32 +229,87 @@ const apiPostNoCors = async (payload) => {
 // Public: envia lead (cliente)
 // =====================
 
+// 🔒 trava global pra impedir double submit
+let __sendingLead = false;
+
+// mobile-proof: tenta sendBeacon (mais confiável quando a página navega logo depois)
+const sendLeadBeacon = (payload) => {
+  try {
+    const blob = new Blob([JSON.stringify(payload)], { type: "text/plain;charset=utf-8" });
+    return navigator.sendBeacon(SCRIPT_URL, blob);
+  } catch {
+    return false;
+  }
+};
+
+// fallback: fetch keepalive (ajuda em navegação imediata)
+const sendLeadFetchKeepalive = async (payload) => {
+  await fetch(SCRIPT_URL, {
+    method: "POST",
+    mode: "no-cors",
+    keepalive: true, // <- importante no mobile
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+  });
+  return true;
+};
+
 const setupPublicForm = () => {
   const publicForm = document.getElementById("public-form");
   if (!publicForm) return;
 
+  const submitBtn =
+    publicForm.querySelector('button[type="submit"], input[type="submit"]') || null;
+
+  const lockUI = (locked, text) => {
+    if (!submitBtn) return;
+    submitBtn.disabled = locked;
+    if (text) submitBtn.dataset.originalText = submitBtn.textContent;
+    if (locked && text) submitBtn.textContent = text;
+    if (!locked && submitBtn.dataset.originalText) submitBtn.textContent = submitBtn.dataset.originalText;
+  };
+
   publicForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+
+    // anti-double-click
+    if (__sendingLead) return;
+    __sendingLead = true;
+
+    lockUI(true, "Enviando...");
 
     const formData = new FormData(publicForm);
     const data = Object.fromEntries(formData.entries());
 
-    try {
-      await apiPostNoCors({
-        action: "lead",
-        sheetId: SHEET_ID,
-        nome: data.nome || "",
-        cpf: data.cpf || "",
-        rg: data.rg || "",
-        nascimento: formatDate(data.dataNascimento),
-        estadoCivil: data.estadoCivil || "",
-        profissao: data.profissao || "",
-        email: data.email || "",
-      });
+    // ✅ payload com requestId fixo (ajuda dedupe no servidor se quiser)
+    const payload = {
+      action: "lead",
+      sheetId: SHEET_ID,
+      requestId: crypto.randomUUID(),
+      nome: data.nome || "",
+      cpf: data.cpf || "",
+      rg: data.rg || "",
+      nascimento: formatDate(data.dataNascimento),
+      estadoCivil: data.estadoCivil || "",
+      profissao: data.profissao || "",
+      email: data.email || "",
+    };
 
+    try {
+      // 1) tenta beacon (melhor pra mobile/navegação)
+      const okBeacon = sendLeadBeacon(payload);
+
+      // 2) se beacon não existir/falhar, usa fetch keepalive
+      if (!okBeacon) {
+        await sendLeadFetchKeepalive(payload);
+      }
+
+      // ✅ só redireciona depois de disparar a requisição
       publicForm.reset();
       window.location.href = "success.html";
     } catch (err) {
+      __sendingLead = false;
+      lockUI(false);
       alert(
         "Não foi possível enviar. Verifique sua conexão e tente novamente.\n\n" +
           String(err?.message || err)
@@ -262,6 +317,7 @@ const setupPublicForm = () => {
     }
   });
 };
+
 
 // =====================
 // Admin: Login
