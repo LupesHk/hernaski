@@ -3,33 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Login administrativo - Hernaski</title>
+    <title>Login - Hernaski</title>
     <link rel="stylesheet" href="../styles.css" />
   </head>
   <body data-page="admin-login">
     <header class="site-header">
       <div class="logo-area" aria-label="Logo da Imobiliária Hernaski">
         <div class="logo-mark" aria-hidden="true">
-          <svg viewBox="0 0 120 120" role="img" aria-label="Logo Hernaski">
-            <circle cx="60" cy="60" r="56" />
-            <path d="M35 78V42h12v36h26V42h12v36c0 8-6 14-14 14H49c-8 0-14-6-14-14z" />
-          </svg>
         </div>
         <div>
-          <p class="logo-title">Imobiliária Hernaski</p>
+          <p class="logo-title">Hernaski Administradora</p>
           <p class="logo-subtitle">Gestão de Contratos</p>
         </div>
       </div>
-      <a class="admin-toggle" href="../index.html">Voltar ao formulário</a>
+      <a class="admin-toggle" href="../index.html">Voltar</a>
     </header>
 
     <main>
       <section class="card" aria-labelledby="admin-login-title">
         <div class="card-header">
-          <h1 id="admin-login-title">Acesso da administradora</h1>
+          <h1 id="admin-login-title">Acesso restrito!</h1>
           <p>
-            Digite suas credenciais para visualizar os formulários pendentes e
-            completar os dados do contrato.
+            Digite suas credenciais para prosseguir. <br>
           </p>
         </div>
         <form id="admin-login-form" class="login-form">
@@ -44,16 +39,12 @@
           <div class="form-actions">
             <button type="submit" class="primary">Entrar</button>
           </div>
-          <p class="helper-text login-hint">
-            Dica: altere as credenciais em <code>app.js</code> para usar os dados
-            oficiais.
-          </p>
         </form>
       </section>
     </main>
 
     <footer class="site-footer">
-      <p>Área restrita para administradoras autorizadas.</p>
+      <p>Área restrita para corretores da administradora.</p>
     </footer>
 
     <script src="../app.js"></script>
