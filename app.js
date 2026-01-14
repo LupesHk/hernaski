@@ -21,11 +21,40 @@ const page = document.body.dataset.page;
 // Utils
 // =====================
 
+
 const formatDate = (value) => {
   if (!value) return "";
-  const date = new Date(value);
-  return date.toLocaleDateString("pt-BR");
+  const s = String(value).trim();
+
+  // já está BR
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
+
+  // input type="date"
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split("-");
+    return `${d}/${m}/${y}`;
+  }
+
+  // fallback (se vier outro formato)
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return s;
+
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
 };
+
+const brToISO = (br) => {
+  const s = String(br || "").trim();
+  if (!s) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return "";
+  return `${m[3]}-${m[2]}-${m[1]}`;
+};
+
+const isoToBR = (iso) => formatDate(iso); // reaproveita a função corrigida
 
 const todayISO = () => {
   const d = new Date();
@@ -533,7 +562,7 @@ const setupDetailsPage = () => {
         endereco: item.endereco,
         cidade: item.cidade,
         periodo: item.periodo,
-        dataInicial: item.dataInicial ? item.dataInicial : "",
+        dataInicial: brToISO(item.dataInicial || ""),
         diaVencimento: item.vencimento,
         encargos: item.encargos,
         valorBonificado: item.valorBonificado,

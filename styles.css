@@ -157,7 +157,6 @@ body {
   font-weight: 400;
 }
 
-/* Botão admin modernizado */
 .admin-toggle {
   background: var(--primary);
   color: #fff;
@@ -179,6 +178,45 @@ body {
   overflow: hidden;
 }
 
+button{
+  position: relative;
+  
+  &:before {
+    content: '';
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    margin-top: -12px;
+    width: 24px;
+    height: 24px;
+    border: 2px solid;
+    border-left-color: transparent;
+    border-right-color: transparent;
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity 0.5s;
+    animation: 0.8s linear infinite rotate;
+  }
+  &.sending{
+    pointer-events: none;
+    cursor: not-allowed;
+    
+    &:before {
+      transition-delay: 0.5s;
+      transition-duration: 1s;
+      opacity: 1;
+    }
+  }
+}
+
+@keyframes rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
 .admin-toggle:hover {
   background: var(--primary-hover);
   transform: translateY(-2px);
@@ -650,5 +688,84 @@ button:disabled {
   button.secondary,
   button.danger {
     padding: 0.75rem 1.25rem;
+  }
+}
+
+/* =========================
+   HEADER MOBILE (COMPACTO)
+   ========================= */
+@media (max-width: 900px) {
+  .site-header {
+    /* volta a ficar em linha, não coluna */
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+
+    /* padding menor e consistente */
+    padding: 0.75rem 1rem;
+
+    /* deixa menos "pesado" */
+    backdrop-filter: none;
+    background-color: rgba(255, 255, 255, 0.98);
+
+    /* opcional: sticky mais suave */
+    position: relative;
+    top: 0;
+  }
+
+  .logo-area {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+
+    /* evita o header esticar */
+    min-width: 0;
+  }
+
+  .logo-mark {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  /* limita o texto do logo (não quebra em 2-3 linhas) */
+  .logo-title {
+    font-size: 1.05rem;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 46vw;
+  }
+
+  .logo-subtitle {
+    display: none; /* some no mobile pra não “inchar” */
+  }
+
+  .header-actions {
+    width: auto;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .admin-toggle {
+    padding: 0.6rem 0.9rem;
+    font-size: 0.85rem;
+    box-shadow: none;
+  }
+}
+
+/* =========================
+   MOBILE EXTRA PEQUENO
+   ========================= */
+@media (max-width: 480px) {
+  .logo-title {
+    max-width: 42vw;
+    font-size: 1rem;
+  }
+
+  .admin-toggle {
+    padding: 0.55rem 0.75rem;
+    font-size: 0.82rem;
   }
 }
