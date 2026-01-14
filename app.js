@@ -181,15 +181,17 @@ const isValidScriptUrl = (url) =>
 
 const submitToSheet = async (submission) => {
   if (!submission?.sensitive) return { ok: false, message: "Dados incompletos." };
-  if (!SCRIPT_URL || SCRIPT_URL.includes("/home/projects/")) {
+
+  if (!isValidScriptUrl(SCRIPT_URL)) {
     return {
       ok: false,
       message:
-        "URL do Apps Script não configurada. Publique o script como Web App e atualize SCRIPT_URL em app.js.",
+        "URL do Apps Script inválida. Publique como Web App e use a URL /exec em SCRIPT_URL.",
     };
   }
 
   const { personal, sensitive } = submission;
+
   const payload = {
     sheetId: SHEET_ID,
     id: crypto.randomUUID(),
@@ -216,9 +218,8 @@ const submitToSheet = async (submission) => {
 
   const response = await fetch(SCRIPT_URL, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    mode: "no-cors",
     body: JSON.stringify(payload),
   });
 
@@ -441,6 +442,7 @@ sensitiveForm.addEventListener("input", (event) => {
     syncCaucaoFromBonificado(); // <-- agora atualiza caução + cauçãoExtenso
   }
 });
+
 
   sensitiveForm.addEventListener("submit", (event) => {
     event.preventDefault();
