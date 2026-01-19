@@ -754,7 +754,6 @@ button:disabled {
   }
 }
 
-/* Para telas maiores, mostra o subtitle e ajusta tamanhos */
 @media (min-width: 901px) {
   .logo-subtitle {
     display: block;

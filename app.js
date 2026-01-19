@@ -1,26 +1,11 @@
-// ================================
-// HERNASKI - app.js (SEM localStorage)
-// Fluxo novo:
-// 1) Cliente envia dados pessoais  -> Apps Script action="lead"  -> cria Solicitação (pendente) + gera HK em Clientes
-// 2) ADM lista pendentes           -> Apps Script GET action="list"
-// 3) ADM complementa e SALVA       -> Apps Script action="update" -> status dados_complementados
-// 4) ADM gera contrato             -> Apps Script action="finalize" -> grava em Contratos + status contrato_gerado -> volta pros pendentes
-// ================================
-
-const ADMIN_KEY = "hernaski-admin-access";
-const ADMIN_USER = "hernaski";
-const ADMIN_PASSWORD = "35890822";
-
+const ADMIN_TOKEN_KEY = "hernaski-admin-token";
+const setAdminToken = (t) => localStorage.setItem(ADMIN_TOKEN_KEY, String(t || ""));
+const getAdminToken = () => localStorage.getItem(ADMIN_TOKEN_KEY) || "";
 const SHEET_ID = "1N0Try5gqh9Z-MUL3d6YVRSVsMQrBUxVejttn1B3zmPs";
 const SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbxPMP0AsYBqIQ9yrdVCnQySwFLhSyxMlLXnHgzF7wOSQpEoZ1qTCZnivLRjmSFPmg/exec";
 
 const page = document.body.dataset.page;
-
-// =====================
-// Utils
-// =====================
-
 
 const formatDate = (value) => {
   if (!value) return "";
@@ -35,7 +20,6 @@ const formatDate = (value) => {
     return `${d}/${m}/${y}`;
   }
 
-  // fallback (se vier outro formato)
   const d = new Date(value);
   if (isNaN(d.getTime())) return s;
 
@@ -183,15 +167,16 @@ const bindExtenso = (form, numberName, extensoName) => {
 const isValidScriptUrl = (url) =>
   Boolean(url) && url.includes("script.google.com/macros/s/") && url.endsWith("/exec");
 
-const setAdminAccess = (value) => localStorage.setItem(ADMIN_KEY, value ? "true" : "false");
-const hasAdminAccess = () => localStorage.getItem(ADMIN_KEY) === "true";
-const requireAdmin = () => {
-  if (!hasAdminAccess()) window.location.href = "login.html";
+const clearAdminToken = () => localStorage.removeItem(ADMIN_TOKEN_KEY);
+
+const goToLogin = () => {
+  const inAdminFolder = window.location.pathname.includes("/admin/");
+  window.location.href = inAdminFolder ? "login.html" : "admin/login.html";
 };
 
-// =====================
-// API helpers (Apps Script)
-// =====================
+const requireAdmin = () => {
+  if (!getAdminToken()) goToLogin();
+};
 
 const apiGet = async (params) => {
   if (!isValidScriptUrl(SCRIPT_URL)) throw new Error("SCRIPT_URL inválida.");
@@ -202,7 +187,6 @@ const apiGet = async (params) => {
   const res = await fetch(url.toString(), { method: "GET" });
   if (!res.ok) throw new Error(`Falha na requisição GET (HTTP ${res.status}).`);
 
-  // pode falhar se o GAS devolver texto
   const text = await res.text();
   try {
     return JSON.parse(text);
@@ -211,7 +195,6 @@ const apiGet = async (params) => {
   }
 };
 
-// ✅ CORRIGIDO: envia como text/plain (mais compatível com GAS) e mostra erro real
 const apiPost = async (payload) => {
   if (!isValidScriptUrl(SCRIPT_URL)) throw new Error("SCRIPT_URL inválida.");
 
@@ -221,15 +204,12 @@ const apiPost = async (payload) => {
     body: JSON.stringify(payload),
   });
 
-  // Se CORS bloquear a resposta, isso pode virar TypeError antes daqui.
-  // Mas quando chega aqui, vamos tentar ler o texto e parsear.
   const text = await res.text();
   let json = null;
 
   try {
     json = JSON.parse(text);
   } catch {
-    // Se não for JSON, ainda mostramos o texto
     throw new Error(`Resposta inválida do Apps Script (POST): ${text}`);
   }
 
@@ -240,7 +220,6 @@ const apiPost = async (payload) => {
   return json;
 };
 
-// ✅ Para o formulário do cliente (evitar NetworkError por CORS)
 const apiPostNoCors = async (payload) => {
   if (!isValidScriptUrl(SCRIPT_URL)) throw new Error("SCRIPT_URL inválida.");
 
@@ -254,14 +233,8 @@ const apiPostNoCors = async (payload) => {
   return { ok: true };
 };
 
-// =====================
-// Public: envia lead (cliente)
-// =====================
-
-// 🔒 trava global pra impedir double submit
 let __sendingLead = false;
 
-// mobile-proof: tenta sendBeacon (mais confiável quando a página navega logo depois)
 const sendLeadBeacon = (payload) => {
   try {
     const blob = new Blob([JSON.stringify(payload)], { type: "text/plain;charset=utf-8" });
@@ -271,7 +244,6 @@ const sendLeadBeacon = (payload) => {
   }
 };
 
-// fallback: fetch keepalive (ajuda em navegação imediata)
 const sendLeadFetchKeepalive = async (payload) => {
   await fetch(SCRIPT_URL, {
     method: "POST",
@@ -301,7 +273,6 @@ const setupPublicForm = () => {
   publicForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    // anti-double-click
     if (__sendingLead) return;
     __sendingLead = true;
 
@@ -310,7 +281,6 @@ const setupPublicForm = () => {
     const formData = new FormData(publicForm);
     const data = Object.fromEntries(formData.entries());
 
-    // ✅ payload com requestId fixo (ajuda dedupe no servidor se quiser)
     const payload = {
       action: "lead",
       sheetId: SHEET_ID,
@@ -325,15 +295,12 @@ const setupPublicForm = () => {
     };
 
     try {
-      // 1) tenta beacon (melhor pra mobile/navegação)
       const okBeacon = sendLeadBeacon(payload);
 
-      // 2) se beacon não existir/falhar, usa fetch keepalive
       if (!okBeacon) {
         await sendLeadFetchKeepalive(payload);
       }
 
-      // ✅ só redireciona depois de disparar a requisição
       publicForm.reset();
       window.location.href = "success.html";
     } catch (err) {
@@ -348,36 +315,31 @@ const setupPublicForm = () => {
 };
 
 
-// =====================
-// Admin: Login
-// =====================
 
 const setupAdminLogin = () => {
-  const adminLoginForm = document.getElementById("admin-login-form");
-  if (!adminLoginForm) return;
+  const form = document.getElementById("admin-login-form");
+  if (!form) return;
 
-  adminLoginForm.addEventListener("submit", (event) => {
-    event.preventDefault();
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
 
-    const formData = new FormData(adminLoginForm);
-    const usuario = formData.get("usuario");
-    const senha = formData.get("senha");
+    try {
+      const res = await apiPost({
+        action: "login",
+        sheetId: SHEET_ID,
+        usuario: fd.get("usuario"),
+        senha: fd.get("senha"),
+      });
 
-    if (usuario === ADMIN_USER && senha === ADMIN_PASSWORD) {
-      setAdminAccess(true);
-      adminLoginForm.reset();
+      setAdminToken(res.token);
       window.location.href = "pending.html";
-      return;
+    } catch (err) {
+      alert("Credenciais inválidas.\n" + String(err?.message || err));
     }
-
-    adminLoginForm.reset();
-    alert("Credenciais inválidas. Verifique com a administradora.");
   });
 };
 
-// =====================
-// Admin: Lista + filtros
-// =====================
 
 const normalizeStatusLabel = (s) => String(s || "").replaceAll("_", " ");
 
@@ -385,11 +347,14 @@ const renderListFromApi = async (container, filter = "pending") => {
   container.innerHTML = '<p class="helper-text">Carregando...</p>';
 
   try {
-    const json = await apiGet({
-      action: "list",
-      sheetId: SHEET_ID,
-      status: filter,
-    });
+    const json = await apiPost({
+  action: "list",
+  sheetId: SHEET_ID,
+  status: filter,
+  token: getAdminToken(),
+});
+
+
 
     const items = Array.isArray(json.items) ? json.items : [];
     container.innerHTML = "";
@@ -425,9 +390,15 @@ const renderListFromApi = async (container, filter = "pending") => {
       container.appendChild(card);
     });
   } catch (err) {
-    container.innerHTML = `<p class="helper-text">Falha ao carregar. ${String(err?.message || err)}</p>`;
-    console.error(err);
+  const msg = String(err?.message || err);
+  if (msg.includes("Sessão expirada") || msg.includes("não autorizada")) {
+    clearAdminToken();
+    window.location.href = "login.html";
+    return;
   }
+  container.innerHTML = `<p class="helper-text">Falha ao carregar. ${msg}</p>`;
+  console.error(err);
+}
 };
 
 const setupPendingPage = () => {
@@ -451,15 +422,19 @@ const setupPendingPage = () => {
   load(currentFilter);
 
   const logoutButton = document.getElementById("logout-button");
-  if (logoutButton) logoutButton.addEventListener("click", () => setAdminAccess(false));
+  if (logoutButton) logoutButton.addEventListener("click", () => {
+  clearAdminToken();
+  window.location.href = "login.html";
+});
 };
 
-// =====================
-// Admin: Details (buscar + salvar + gerar)
-// =====================
-
 const fetchOneRequest = async (requestId) => {
-  const json = await apiGet({ action: "list", sheetId: SHEET_ID, status: "all" });
+  const json = await apiPost({
+    action: "list",
+    sheetId: SHEET_ID,
+    status: "all",
+    token: getAdminToken(),
+  });
   const items = Array.isArray(json.items) ? json.items : [];
   return items.find((x) => String(x.requestId) === String(requestId)) || null;
 };
@@ -482,7 +457,6 @@ const setupDetailsPage = () => {
     return;
   }
 
-  // por padrão: só libera depois de salvar
   generateButton.disabled = true;
 
   const valorBonificado = sensitiveForm.elements.namedItem("valorBonificado");
@@ -578,7 +552,6 @@ const setupDetailsPage = () => {
         if (el && v) el.value = v;
       });
 
-      // defaults extras, se vier vazio do GAS
       if (periodo && !periodo.value) periodo.value = "12";
       if (dataInicial && !dataInicial.value) dataInicial.value = todayISO();
 
@@ -601,7 +574,6 @@ const setupDetailsPage = () => {
     }
   })();
 
-  // SALVAR COMPLEMENTO
   sensitiveForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
@@ -614,23 +586,24 @@ const setupDetailsPage = () => {
       statusInfo.textContent = "Salvando...";
 
       await apiPost({
-        action: "update",
-        sheetId: SHEET_ID,
-        requestId,
+  action: "update",
+  sheetId: SHEET_ID,
+  requestId,
+  token: getAdminToken(),   // ✅ ADD
 
-        endereco: d2.endereco || "",
-        cidade: d2.cidade || "",
-        periodo: d2.periodo || "",
-        dataInicial: d2.dataInicial || "",
-        vencimento: d2.diaVencimento || "",
-        encargos: d2.encargos || "",
-        valorBruto: d2.valorBruto || "",
-        valorBrutoExtenso: d2.valorBrutoExtenso || "",
-        valorBonificado: d2.valorBonificado || "",
-        valorBonificadoExtenso: d2.valorBonificadoExtenso || "",
-        caucao: d2.caucao || "",
-        caucaoExtenso: d2.caucaoExtenso || "",
-      });
+  endereco: d2.endereco || "",
+  cidade: d2.cidade || "",
+  periodo: d2.periodo || "",
+  dataInicial: d2.dataInicial || "",
+  vencimento: d2.diaVencimento || "",
+  encargos: d2.encargos || "",
+  valorBruto: d2.valorBruto || "",
+  valorBrutoExtenso: d2.valorBrutoExtenso || "",
+  valorBonificado: d2.valorBonificado || "",
+  valorBonificadoExtenso: d2.valorBonificadoExtenso || "",
+  caucao: d2.caucao || "",
+  caucaoExtenso: d2.caucaoExtenso || "",
+});
 
       statusInfo.textContent = "Dados salvos com sucesso.";
       generateButton.disabled = false;
@@ -640,7 +613,6 @@ const setupDetailsPage = () => {
     }
   });
 
-  // GERAR CONTRATO
   generateButton.addEventListener("click", async () => {
     generateButton.disabled = true;
 
@@ -655,32 +627,33 @@ const setupDetailsPage = () => {
       statusInfo.textContent = "Gerando contrato...";
 
       await apiPost({
-        action: "finalize",
-        sheetId: SHEET_ID,
-        requestId,
+  action: "finalize",
+  sheetId: SHEET_ID,
+  requestId,
+  token: getAdminToken(),   // ✅ ADD
 
-        id: crypto.randomUUID(),
-        nome: item?.nome || "",
-        email: item?.email || "",
-        estadoCivil: item?.estadoCivil || "",
-        nascimento: item?.nascimento || "",
-        profissao: item?.profissao || "",
-        rg: item?.rg || "",
-        cpf: item?.cpf || "",
+  id: crypto.randomUUID(),
+  nome: item?.nome || "",
+  email: item?.email || "",
+  estadoCivil: item?.estadoCivil || "",
+  nascimento: item?.nascimento || "",
+  profissao: item?.profissao || "",
+  rg: item?.rg || "",
+  cpf: item?.cpf || "",
 
-        endereco: d2.endereco || "",
-        cidade: d2.cidade || "",
-        periodo: d2.periodo || "",
-        dataInicial: d2.dataInicial || "",
-        vencimento: d2.diaVencimento || "",
-        encargos: d2.encargos || "",
-        valorBruto: d2.valorBruto || "",
-        valorBrutoExtenso: d2.valorBrutoExtenso || "",
-        valorBonificado: d2.valorBonificado || "",
-        valorBonificadoExtenso: d2.valorBonificadoExtenso || "",
-        caucao: d2.caucao || "",
-        caucaoExtenso: d2.caucaoExtenso || "",
-      });
+  endereco: d2.endereco || "",
+  cidade: d2.cidade || "",
+  periodo: d2.periodo || "",
+  dataInicial: d2.dataInicial || "",
+  vencimento: d2.diaVencimento || "",
+  encargos: d2.encargos || "",
+  valorBruto: d2.valorBruto || "",
+  valorBrutoExtenso: d2.valorBrutoExtenso || "",
+  valorBonificado: d2.valorBonificado || "",
+  valorBonificadoExtenso: d2.valorBonificadoExtenso || "",
+  caucao: d2.caucao || "",
+  caucaoExtenso: d2.caucaoExtenso || "",
+});
 
       statusInfo.textContent = "Contrato gerado e dados enviados para a planilha.";
 
@@ -694,10 +667,6 @@ const setupDetailsPage = () => {
     }
   });
 };
-
-// =====================
-// Router
-// =====================
 
 if (page === "public") setupPublicForm();
 if (page === "admin-login") setupAdminLogin();
