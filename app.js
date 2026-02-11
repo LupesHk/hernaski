@@ -255,9 +255,83 @@ const sendLeadFetchKeepalive = async (payload) => {
   return true;
 };
 
+/* =========================
+   CPF: máscara ao digitar
+   ========================= */
+const cpfDigits = (cpf) => String(cpf || "").replace(/\D/g, "");
+
+const formatCPF = (digitsOrCpf) => {
+  const d = cpfDigits(digitsOrCpf).slice(0, 11);
+
+  // progressivo: 000.000.000-00
+  const p1 = d.slice(0, 3);
+  const p2 = d.slice(3, 6);
+  const p3 = d.slice(6, 9);
+  const p4 = d.slice(9, 11);
+
+  let out = p1;
+  if (p2) out += "." + p2;
+  if (p3) out += "." + p3;
+  if (p4) out += "-" + p4;
+  return out;
+};
+
+const bindCpfMask = (inputEl) => {
+  if (!inputEl) return;
+
+  const apply = () => {
+    const digits = cpfDigits(inputEl.value);
+    inputEl.value = formatCPF(digits);
+  };
+
+  inputEl.addEventListener("input", apply);
+  inputEl.addEventListener("blur", apply);
+  apply();
+};
+/* ========================= */
+
+const LEAD_QUEUE_KEY = "hernaski-lead-queue-v1";
+
+const loadLeadQueue = () => {
+  try { return JSON.parse(localStorage.getItem(LEAD_QUEUE_KEY) || "[]"); }
+  catch { return []; }
+};
+
+const saveLeadQueue = (arr) => {
+  localStorage.setItem(LEAD_QUEUE_KEY, JSON.stringify(Array.isArray(arr) ? arr : []));
+};
+
+const enqueueLead = (payload) => {
+  const q = loadLeadQueue();
+  q.push({ payload, tries: 0, lastTryAt: Date.now() });
+  saveLeadQueue(q);
+};
+
+const flushLeadQueue = async () => {
+  const q = loadLeadQueue();
+  if (!q.length) return;
+
+  const keep = [];
+  for (const item of q) {
+    // limita tentativas pra não ficar infinito
+    if ((item.tries || 0) >= 5) continue;
+
+    try {
+      await apiPost(item.payload); // <-- confirmação real do servidor
+    } catch (e) {
+      keep.push({ payload: item.payload, tries: (item.tries || 0) + 1, lastTryAt: Date.now() });
+    }
+  }
+  saveLeadQueue(keep);
+};
+
 const setupPublicForm = () => {
   const publicForm = document.getElementById("public-form");
   if (!publicForm) return;
+
+  // máscara CPF ao digitar (se você já colou bindCpfMask acima)
+  const cpfInput = publicForm.querySelector('input[name="cpf"]');
+  bindCpfMask(cpfInput);
 
   const submitBtn =
     publicForm.querySelector('button[type="submit"], input[type="submit"]') || null;
@@ -265,14 +339,24 @@ const setupPublicForm = () => {
   const lockUI = (locked, text) => {
     if (!submitBtn) return;
     submitBtn.disabled = locked;
-    if (text) submitBtn.dataset.originalText = submitBtn.textContent;
-    if (locked && text) submitBtn.textContent = text;
-    if (!locked && submitBtn.dataset.originalText) submitBtn.textContent = submitBtn.dataset.originalText;
+    if (text && locked) {
+      submitBtn.dataset.originalText = submitBtn.textContent || submitBtn.value || "";
+      if ("value" in submitBtn) submitBtn.value = text;
+      else submitBtn.textContent = text;
+    }
+    if (!locked && submitBtn?.dataset?.originalText) {
+      const original = submitBtn.dataset.originalText;
+      if ("value" in submitBtn) submitBtn.value = original;
+      else submitBtn.textContent = original;
+      delete submitBtn.dataset.originalText;
+    }
   };
+
+  // tenta reenviar coisas que falharam (quando a pessoa volta ao site)
+  flushLeadQueue().catch(() => {});
 
   publicForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-
     if (__sendingLead) return;
     __sendingLead = true;
 
@@ -286,7 +370,8 @@ const setupPublicForm = () => {
       sheetId: SHEET_ID,
       requestId: crypto.randomUUID(),
       nome: data.nome || "",
-      cpf: data.cpf || "",
+      // manda CPF padronizado com máscara (ou troque pra cpfDigits(...) se preferir só números)
+      cpf: formatCPF(data.cpf || ""),
       rg: data.rg || "",
       nascimento: formatDate(data.dataNascimento),
       estadoCivil: data.estadoCivil || "",
@@ -295,51 +380,83 @@ const setupPublicForm = () => {
     };
 
     try {
-      const okBeacon = sendLeadBeacon(payload);
-
-      if (!okBeacon) {
-        await sendLeadFetchKeepalive(payload);
-      }
+      // ✅ caminho principal: confirmação real
+      await apiPost(payload);
 
       publicForm.reset();
       window.location.href = "success.html";
     } catch (err) {
+      // ✅ fallback seguro: coloca na fila e avisa “vamos reenviar”
+      enqueueLead(payload);
+
       __sendingLead = false;
       lockUI(false);
+
       alert(
-        "Não foi possível enviar. Verifique sua conexão e tente novamente.\n\n" +
-          String(err?.message || err)
+        "Seu envio ficou pendente por instabilidade de conexão. " +
+        "Assim que a internet estabilizar e você abrir o site de novo, ele será reenviado.\n\n" +
+        String(err?.message || err)
       );
     }
   });
 };
 
 
+let __loggingIn = false;
 
 const setupAdminLogin = () => {
   const form = document.getElementById("admin-login-form");
   if (!form) return;
 
+  const submitBtn =
+    form.querySelector('button[type="submit"], input[type="submit"]') || null;
+
+  const lockUI = (locked, text) => {
+    if (!submitBtn) return;
+    submitBtn.disabled = locked;
+
+    if (text && locked) {
+      submitBtn.dataset.originalText = submitBtn.textContent || submitBtn.value || "";
+      if ("value" in submitBtn) submitBtn.value = text;
+      else submitBtn.textContent = text;
+    }
+
+    if (!locked && submitBtn?.dataset?.originalText) {
+      const original = submitBtn.dataset.originalText;
+      if ("value" in submitBtn) submitBtn.value = original;
+      else submitBtn.textContent = original;
+      delete submitBtn.dataset.originalText;
+    }
+  };
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (__loggingIn) return;
+    __loggingIn = true;
+
+    lockUI(true, "Entrando...");
+
     const fd = new FormData(form);
 
     try {
       const res = await apiPost({
         action: "login",
         sheetId: SHEET_ID,
-        usuario: fd.get("usuario"),
-        senha: fd.get("senha"),
+        usuario: String(fd.get("usuario") || "").trim(),
+        senha: String(fd.get("senha") || ""),
       });
 
       setAdminToken(res.token);
-      window.location.href = "pending.html";
+
+      window.location.replace("pending.html");
     } catch (err) {
       alert("Credenciais inválidas.\n" + String(err?.message || err));
+      __loggingIn = false;
+      lockUI(false);
+      return;
     }
   });
 };
-
 
 const normalizeStatusLabel = (s) => String(s || "").replaceAll("_", " ");
 
@@ -348,13 +465,11 @@ const renderListFromApi = async (container, filter = "pending") => {
 
   try {
     const json = await apiPost({
-  action: "list",
-  sheetId: SHEET_ID,
-  status: filter,
-  token: getAdminToken(),
-});
-
-
+      action: "list",
+      sheetId: SHEET_ID,
+      status: filter,
+      token: getAdminToken(),
+    });
 
     const items = Array.isArray(json.items) ? json.items : [];
     container.innerHTML = "";
@@ -390,15 +505,15 @@ const renderListFromApi = async (container, filter = "pending") => {
       container.appendChild(card);
     });
   } catch (err) {
-  const msg = String(err?.message || err);
-  if (msg.includes("Sessão expirada") || msg.includes("não autorizada")) {
-    clearAdminToken();
-    window.location.href = "login.html";
-    return;
+    const msg = String(err?.message || err);
+    if (msg.includes("Sessão expirada") || msg.includes("não autorizada")) {
+      clearAdminToken();
+      window.location.href = "login.html";
+      return;
+    }
+    container.innerHTML = `<p class="helper-text">Falha ao carregar. ${msg}</p>`;
+    console.error(err);
   }
-  container.innerHTML = `<p class="helper-text">Falha ao carregar. ${msg}</p>`;
-  console.error(err);
-}
 };
 
 const setupPendingPage = () => {
@@ -423,9 +538,9 @@ const setupPendingPage = () => {
 
   const logoutButton = document.getElementById("logout-button");
   if (logoutButton) logoutButton.addEventListener("click", () => {
-  clearAdminToken();
-  window.location.href = "login.html";
-});
+    clearAdminToken();
+    window.location.href = "login.html";
+  });
 };
 
 const fetchOneRequest = async (requestId) => {
@@ -586,24 +701,24 @@ const setupDetailsPage = () => {
       statusInfo.textContent = "Salvando...";
 
       await apiPost({
-  action: "update",
-  sheetId: SHEET_ID,
-  requestId,
-  token: getAdminToken(),   // ✅ ADD
+        action: "update",
+        sheetId: SHEET_ID,
+        requestId,
+        token: getAdminToken(), // ✅ ADD
 
-  endereco: d2.endereco || "",
-  cidade: d2.cidade || "",
-  periodo: d2.periodo || "",
-  dataInicial: d2.dataInicial || "",
-  vencimento: d2.diaVencimento || "",
-  encargos: d2.encargos || "",
-  valorBruto: d2.valorBruto || "",
-  valorBrutoExtenso: d2.valorBrutoExtenso || "",
-  valorBonificado: d2.valorBonificado || "",
-  valorBonificadoExtenso: d2.valorBonificadoExtenso || "",
-  caucao: d2.caucao || "",
-  caucaoExtenso: d2.caucaoExtenso || "",
-});
+        endereco: d2.endereco || "",
+        cidade: d2.cidade || "",
+        periodo: d2.periodo || "",
+        dataInicial: d2.dataInicial || "",
+        vencimento: d2.diaVencimento || "",
+        encargos: d2.encargos || "",
+        valorBruto: d2.valorBruto || "",
+        valorBrutoExtenso: d2.valorBrutoExtenso || "",
+        valorBonificado: d2.valorBonificado || "",
+        valorBonificadoExtenso: d2.valorBonificadoExtenso || "",
+        caucao: d2.caucao || "",
+        caucaoExtenso: d2.caucaoExtenso || "",
+      });
 
       statusInfo.textContent = "Dados salvos com sucesso.";
       generateButton.disabled = false;
@@ -627,33 +742,33 @@ const setupDetailsPage = () => {
       statusInfo.textContent = "Gerando contrato...";
 
       await apiPost({
-  action: "finalize",
-  sheetId: SHEET_ID,
-  requestId,
-  token: getAdminToken(),   // ✅ ADD
+        action: "finalize",
+        sheetId: SHEET_ID,
+        requestId,
+        token: getAdminToken(), // ✅ ADD
 
-  id: crypto.randomUUID(),
-  nome: item?.nome || "",
-  email: item?.email || "",
-  estadoCivil: item?.estadoCivil || "",
-  nascimento: item?.nascimento || "",
-  profissao: item?.profissao || "",
-  rg: item?.rg || "",
-  cpf: item?.cpf || "",
+        id: crypto.randomUUID(),
+        nome: item?.nome || "",
+        email: item?.email || "",
+        estadoCivil: item?.estadoCivil || "",
+        nascimento: item?.nascimento || "",
+        profissao: item?.profissao || "",
+        rg: item?.rg || "",
+        cpf: item?.cpf || "",
 
-  endereco: d2.endereco || "",
-  cidade: d2.cidade || "",
-  periodo: d2.periodo || "",
-  dataInicial: d2.dataInicial || "",
-  vencimento: d2.diaVencimento || "",
-  encargos: d2.encargos || "",
-  valorBruto: d2.valorBruto || "",
-  valorBrutoExtenso: d2.valorBrutoExtenso || "",
-  valorBonificado: d2.valorBonificado || "",
-  valorBonificadoExtenso: d2.valorBonificadoExtenso || "",
-  caucao: d2.caucao || "",
-  caucaoExtenso: d2.caucaoExtenso || "",
-});
+        endereco: d2.endereco || "",
+        cidade: d2.cidade || "",
+        periodo: d2.periodo || "",
+        dataInicial: d2.dataInicial || "",
+        vencimento: d2.diaVencimento || "",
+        encargos: d2.encargos || "",
+        valorBruto: d2.valorBruto || "",
+        valorBrutoExtenso: d2.valorBrutoExtenso || "",
+        valorBonificado: d2.valorBonificado || "",
+        valorBonificadoExtenso: d2.valorBonificadoExtenso || "",
+        caucao: d2.caucao || "",
+        caucaoExtenso: d2.caucaoExtenso || "",
+      });
 
       statusInfo.textContent = "Contrato gerado e dados enviados para a planilha.";
 
