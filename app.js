@@ -729,58 +729,90 @@ const setupDetailsPage = () => {
   });
 
   generateButton.addEventListener("click", async () => {
-    generateButton.disabled = true;
+  generateButton.disabled = true;
 
-    let item = null;
-    try {
-      item = await fetchOneRequest(requestId);
-    } catch (_) {}
+  let item = null;
+  try { item = await fetchOneRequest(requestId); } catch (_) {}
 
-    const d2 = Object.fromEntries(new FormData(sensitiveForm).entries());
+  const d2 = Object.fromEntries(new FormData(sensitiveForm).entries());
 
-    try {
-      statusInfo.textContent = "Gerando contrato...";
+  try {
+    statusInfo.textContent = "Gerando contrato...";
 
-      await apiPost({
-        action: "finalize",
-        sheetId: SHEET_ID,
-        requestId,
-        token: getAdminToken(), // ✅ ADD
+    const res = await apiPost({
+      action: "finalize",
+      sheetId: SHEET_ID,
+      requestId,
+      token: getAdminToken(),
 
-        id: crypto.randomUUID(),
-        nome: item?.nome || "",
-        email: item?.email || "",
-        estadoCivil: item?.estadoCivil || "",
-        nascimento: item?.nascimento || "",
-        profissao: item?.profissao || "",
-        rg: item?.rg || "",
-        cpf: item?.cpf || "",
+      id: crypto.randomUUID(),
+      nome: item?.nome || "",
+      email: item?.email || "",
+      estadoCivil: item?.estadoCivil || "",
+      nascimento: item?.nascimento || "",
+      profissao: item?.profissao || "",
+      rg: item?.rg || "",
+      cpf: item?.cpf || "",
 
-        endereco: d2.endereco || "",
-        cidade: d2.cidade || "",
-        periodo: d2.periodo || "",
-        dataInicial: d2.dataInicial || "",
-        vencimento: d2.diaVencimento || "",
-        encargos: d2.encargos || "",
-        valorBruto: d2.valorBruto || "",
-        valorBrutoExtenso: d2.valorBrutoExtenso || "",
-        valorBonificado: d2.valorBonificado || "",
-        valorBonificadoExtenso: d2.valorBonificadoExtenso || "",
-        caucao: d2.caucao || "",
-        caucaoExtenso: d2.caucaoExtenso || "",
-      });
+      endereco: d2.endereco || "",
+      cidade: d2.cidade || "",
+      periodo: d2.periodo || "",
+      dataInicial: d2.dataInicial || "",
+      vencimento: d2.diaVencimento || "",
+      encargos: d2.encargos || "",
+      valorBruto: d2.valorBruto || "",
+      valorBrutoExtenso: d2.valorBrutoExtenso || "",
+      valorBonificado: d2.valorBonificado || "",
+      valorBonificadoExtenso: d2.valorBonificadoExtenso || "",
+      caucao: d2.caucao || "",
+      caucaoExtenso: d2.caucaoExtenso || "",
+    });
 
-      statusInfo.textContent = "Contrato gerado e dados enviados para a planilha.";
+        let opened = false;
 
-      setTimeout(() => {
-        window.location.href = "pending.html";
-      }, 500);
-    } catch (err) {
-      console.error(err);
-      statusInfo.textContent = `Erro ao gerar: ${String(err?.message || err)}`;
-      generateButton.disabled = false;
+    if (res?.docUrl) {
+      statusInfo.textContent = "Contrato gerado. Abrindo...";
+
+      const w = window.open(res.docUrl, "_blank");
+      opened = !!w;
+
+      if (!opened) {
+        // Mostra link e NÃO redireciona agora
+        statusInfo.innerHTML =
+          `Contrato gerado, mas o navegador bloqueou a nova aba. ` +
+          `<a id="open-doc-link" href="${res.docUrl}" target="_blank" rel="noopener">Clique aqui para abrir</a>.`;
+
+        const link = document.getElementById("open-doc-link");
+        if (link) {
+          link.addEventListener("click", () => {
+            // dá um tempinho e aí sim volta pra lista
+            setTimeout(() => (window.location.href = "pending.html"), 400);
+          });
+        }
+
+        // opcional: botão "Voltar"
+        // statusInfo.innerHTML += `<br><button id="back-pending" class="secondary">Voltar</button>`;
+        // document.getElementById("back-pending")?.addEventListener("click", () => window.location.href="pending.html");
+        return; // <<< MUITO IMPORTANTE: para aqui
+      } else {
+        statusInfo.textContent = "Contrato gerado e aberto em nova aba.";
+      }
+    } else {
+      statusInfo.textContent = "Contrato gerado, mas não recebi o link do documento.";
+      return; // não redireciona no escuro
     }
-  });
+
+    // ✅ só redireciona quando abriu sozinho
+    setTimeout(() => {
+      window.location.href = "pending.html";
+    }, 1200);
+
+  } catch (err) {
+    console.error(err);
+    statusInfo.textContent = `Erro ao gerar: ${String(err?.message || err)}`;
+    generateButton.disabled = false;
+  }
+});
 };
 
 if (page === "public") setupPublicForm();
