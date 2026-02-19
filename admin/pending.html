@@ -9,33 +9,27 @@
   <body data-page="admin-pending">
     <header class="site-header">
       <div class="logo-area" aria-label="Logo da Imobiliária Hernaski">
-        <div class="logo-mark" aria-hidden="true">
-        </div>
+        <div class="logo-mark" aria-hidden="true"></div>
         <div>
           <p class="logo-title">Hernaski Administradora</p>
-          <p class="logo-subtitle">Pendências de contrato</p>
+          <p class="logo-subtitle">Pendências</p>
         </div>
       </div>
+
       <div class="header-actions">
-        <a class="secondary" href="../index.html" id="logout-button">Sair</a>
+        <button id="logout-button" class="secondary" type="button">Sair</button>
       </div>
     </header>
 
     <main>
-      <section class="card" aria-labelledby="pending-title">
+      <section class="card">
         <div class="card-header">
-          <h1 id="pending-title">Formulários pendentes</h1>
-          <p>
-            Clique em um formulário para complementar os dados e gerar o contrato.
-          </p>
+          <h1>Pendências de contrato</h1>
         </div>
-        <div id="pending-items" class="pending-items"></div>
+
+        <div id="pending-items"></div>
       </section>
     </main>
-
-    <footer class="site-footer">
-      <p>Use o painel para acompanhar o status das solicitações.</p>
-    </footer>
 
     <script src="../app.js"></script>
   </body>

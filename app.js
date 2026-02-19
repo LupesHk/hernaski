@@ -11,10 +11,8 @@ const formatDate = (value) => {
   if (!value) return "";
   const s = String(value).trim();
 
-  // já está BR
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
 
-  // input type="date"
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     const [y, m, d] = s.split("-");
     return `${d}/${m}/${y}`;
@@ -460,6 +458,16 @@ const setupAdminLogin = () => {
 
 const normalizeStatusLabel = (s) => String(s || "").replaceAll("_", " ");
 
+// ✅ PATCH: apagar solicitação no backend
+const deleteRequestById = async (requestId) => {
+  return apiPost({
+    action: "delete",
+    sheetId: SHEET_ID,
+    requestId,
+    token: getAdminToken(),
+  });
+};
+
 const renderListFromApi = async (container, filter = "pending") => {
   container.innerHTML = '<p class="helper-text">Carregando...</p>';
 
@@ -500,7 +508,36 @@ const renderListFromApi = async (container, filter = "pending") => {
       action.href = `details.html?requestId=${encodeURIComponent(item.requestId)}`;
       action.textContent = item.status === "contrato_gerado" ? "Ver detalhes" : "Complementar dados";
 
-      actionRow.append(action);
+      // ✅ PATCH: botão apagar
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "secondary";
+      delBtn.textContent = "Apagar";
+
+      delBtn.addEventListener("click", async () => {
+        const ok = confirm(
+          `Tem certeza que deseja apagar?\n\n` +
+          `Nome: ${item.nome || "-"}\n` +
+          `CPF: ${item.cpf || "-"}\n` +
+          `RequestId: ${item.requestId}\n\n` +
+          `Isso remove da aba "Solicitacoes".`
+        );
+        if (!ok) return;
+
+        delBtn.disabled = true;
+        delBtn.textContent = "Apagando...";
+
+        try {
+          await deleteRequestById(item.requestId);
+          renderListFromApi(container, filter);
+        } catch (e) {
+          alert("Falha ao apagar.\n" + String(e?.message || e));
+          delBtn.disabled = false;
+          delBtn.textContent = "Apagar";
+        }
+      });
+
+      actionRow.append(action, delBtn);
       card.append(title, meta, status, actionRow);
       container.appendChild(card);
     });
@@ -557,22 +594,24 @@ const fetchOneRequest = async (requestId) => {
 const setupDetailsPage = () => {
   const sensitiveForm = document.getElementById("sensitive-form");
   if (!sensitiveForm) return;
+  initPlacePickerToForm();
 
   requireAdmin();
 
   const selectedInfo = document.getElementById("selected-info");
   const statusInfo = document.getElementById("status-info");
-  const generateButton = document.getElementById("generate-contract");
+
+  // ✅ PATCH: compatível com HTML antigo e novo
+  const generateButton = document.getElementById("saveGenerateBtn");
+  const saveGenerateBtn = document.getElementById("save-generate-btn"); // novo (type="submit")
 
   const requestId = new URLSearchParams(window.location.search).get("requestId");
 
   if (!requestId) {
     selectedInfo.textContent = "requestId ausente na URL.";
-    generateButton.disabled = true;
+    if (saveGenerateBtn) saveGenerateBtn.disabled = true;
     return;
   }
-
-  generateButton.disabled = true;
 
   const valorBonificado = sensitiveForm.elements.namedItem("valorBonificado");
   const caucao = sensitiveForm.elements.namedItem("caucao");
@@ -631,13 +670,15 @@ const setupDetailsPage = () => {
     }
   });
 
+
   (async () => {
     try {
       const item = await fetchOneRequest(requestId);
 
       if (!item) {
         selectedInfo.textContent = "Solicitação não encontrada.";
-        generateButton.disabled = true;
+        if (generateButton) generateButton.disabled = true;
+        if (saveGenerateBtn) saveGenerateBtn.disabled = true;
 
         sensitiveForm
           .querySelectorAll("input, select, textarea, button")
@@ -673,38 +714,54 @@ const setupDetailsPage = () => {
       if (valorBonificado && caucao && !caucao.value) setCaucaoAndExtenso(valorBonificado.value);
 
       if (item.status === "contrato_gerado") {
-        generateButton.disabled = false;
+        if (saveGenerateBtn) saveGenerateBtn.disabled = false;
         statusInfo.textContent = "Este contrato já foi gerado.";
       } else if (item.status === "dados_complementados") {
-        generateButton.disabled = false;
+        if (saveGenerateBtn) saveGenerateBtn.disabled = false;
         statusInfo.textContent = "Dados já complementados. Você já pode gerar o contrato.";
       } else {
-        generateButton.disabled = true;
-        statusInfo.textContent = "Salve o complemento para liberar o botão de gerar contrato.";
+        if (saveGenerateBtn) saveGenerateBtn.disabled = false; // botão único pode salvar (e depois gerar)
+        if (saveGenerateBtn) saveGenerateBtn.disabled = true;
+        statusInfo.textContent = "Salve o complemento para liberar a geração do contrato.";
       }
     } catch (err) {
       console.error(err);
       selectedInfo.textContent = "Falha ao buscar solicitação.";
-      generateButton.disabled = true;
+      if (generateButton) generateButton.disabled = true;
+      if (saveGenerateBtn) saveGenerateBtn.disabled = true;
     }
   })();
 
-  sensitiveForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
+  // ✅ PATCH: função que gera contrato (reutilizada pelos 2 modos)
+  const runFinalize = async () => {
+    // abre placeholder no clique (reduz bloqueio)
+    const placeholder = window.open("about:blank", "_blank");
 
-    calcularValorBruto();
-    syncCaucaoFromBonificado();
+    if (generateButton) generateButton.disabled = true;
+    if (saveGenerateBtn) saveGenerateBtn.disabled = true;
+
+    let item = null;
+    try { item = await fetchOneRequest(requestId); } catch (_) {}
 
     const d2 = Object.fromEntries(new FormData(sensitiveForm).entries());
 
     try {
-      statusInfo.textContent = "Salvando...";
+      statusInfo.textContent = "Gerando contrato...";
 
-      await apiPost({
-        action: "update",
+      const res = await apiPost({
+        action: "finalize",
         sheetId: SHEET_ID,
         requestId,
-        token: getAdminToken(), // ✅ ADD
+        token: getAdminToken(),
+
+        id: crypto.randomUUID(),
+        nome: item?.nome || "",
+        email: item?.email || "",
+        estadoCivil: item?.estadoCivil || "",
+        nascimento: item?.nascimento || "",
+        profissao: item?.profissao || "",
+        rg: item?.rg || "",
+        cpf: item?.cpf || "",
 
         endereco: d2.endereco || "",
         cidade: d2.cidade || "",
@@ -720,23 +777,84 @@ const setupDetailsPage = () => {
         caucaoExtenso: d2.caucaoExtenso || "",
       });
 
-      statusInfo.textContent = "Dados salvos com sucesso.";
-      generateButton.disabled = false;
+      if (res?.docUrl) {
+        statusInfo.textContent = "Contrato gerado. Abrindo...";
+
+        if (placeholder && !placeholder.closed) {
+          placeholder.location.href = res.docUrl;
+        } else {
+          statusInfo.innerHTML =
+            `Contrato gerado, mas o navegador bloqueou a nova aba. ` +
+            `<a id="open-doc-link" href="${res.docUrl}" target="_blank" rel="noopener">Clique aqui para abrir</a>.`;
+
+          const link = document.getElementById("open-doc-link");
+          if (link) {
+            link.addEventListener("click", () => {
+              setTimeout(() => (window.location.href = "pending.html"), 400);
+            });
+          }
+          return;
+        }
+
+        setTimeout(() => {
+          window.location.href = "pending.html";
+        }, 1200);
+      } else {
+        statusInfo.textContent = "Contrato gerado, mas não recebi o link do documento.";
+        if (generateButton) generateButton.disabled = false;
+        if (saveGenerateBtn) saveGenerateBtn.disabled = false;
+      }
+
     } catch (err) {
       console.error(err);
-      statusInfo.textContent = `Erro ao salvar: ${String(err?.message || err)}`;
+      statusInfo.textContent = `Erro ao gerar: ${String(err?.message || err)}`;
+      if (generateButton) generateButton.disabled = false;
+      if (saveGenerateBtn) saveGenerateBtn.disabled = false;
     }
-  });
+  };
 
-  generateButton.addEventListener("click", async () => {
-  generateButton.disabled = true;
+  let __submitting = false;
 
-  let item = null;
-  try { item = await fetchOneRequest(requestId); } catch (_) {}
+sensitiveForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (__submitting) return;
+  __submitting = true;
+
+  calcularValorBruto();
+  syncCaucaoFromBonificado();
 
   const d2 = Object.fromEntries(new FormData(sensitiveForm).entries());
 
+  generateButton.disabled = true;
+  statusInfo.textContent = "Salvando e gerando contrato...";
+
+  // pega dados básicos do lead
+  let item = null;
+  try { item = await fetchOneRequest(requestId); } catch (_) {}
+
   try {
+    // 1) UPDATE
+    await apiPost({
+      action: "update",
+      sheetId: SHEET_ID,
+      requestId,
+      token: getAdminToken(),
+
+      endereco: d2.endereco || "",
+      cidade: d2.cidade || "",
+      periodo: d2.periodo || "",
+      dataInicial: d2.dataInicial || "",
+      vencimento: d2.diaVencimento || "",
+      encargos: d2.encargos || "",
+      valorBruto: d2.valorBruto || "",
+      valorBrutoExtenso: d2.valorBrutoExtenso || "",
+      valorBonificado: d2.valorBonificado || "",
+      valorBonificadoExtenso: d2.valorBonificadoExtenso || "",
+      caucao: d2.caucao || "",
+      caucaoExtenso: d2.caucaoExtenso || "",
+    });
+
+    // 2) FINALIZE
     statusInfo.textContent = "Gerando contrato...";
 
     const res = await apiPost({
@@ -768,52 +886,62 @@ const setupDetailsPage = () => {
       caucaoExtenso: d2.caucaoExtenso || "",
     });
 
-        let opened = false;
-
     if (res?.docUrl) {
       statusInfo.textContent = "Contrato gerado. Abrindo...";
-
       const w = window.open(res.docUrl, "_blank");
-      opened = !!w;
 
-      if (!opened) {
-        // Mostra link e NÃO redireciona agora
+      if (!w) {
         statusInfo.innerHTML =
           `Contrato gerado, mas o navegador bloqueou a nova aba. ` +
-          `<a id="open-doc-link" href="${res.docUrl}" target="_blank" rel="noopener">Clique aqui para abrir</a>.`;
-
-        const link = document.getElementById("open-doc-link");
-        if (link) {
-          link.addEventListener("click", () => {
-            // dá um tempinho e aí sim volta pra lista
-            setTimeout(() => (window.location.href = "pending.html"), 400);
-          });
-        }
-
-        // opcional: botão "Voltar"
-        // statusInfo.innerHTML += `<br><button id="back-pending" class="secondary">Voltar</button>`;
-        // document.getElementById("back-pending")?.addEventListener("click", () => window.location.href="pending.html");
-        return; // <<< MUITO IMPORTANTE: para aqui
-      } else {
-        statusInfo.textContent = "Contrato gerado e aberto em nova aba.";
+          `<a href="${res.docUrl}" target="_blank" rel="noopener">Clique aqui para abrir</a>.`;
+        return;
       }
-    } else {
-      statusInfo.textContent = "Contrato gerado, mas não recebi o link do documento.";
-      return; // não redireciona no escuro
+
+      setTimeout(() => (window.location.href = "pending.html"), 1200);
+      return;
     }
 
-    // ✅ só redireciona quando abriu sozinho
-    setTimeout(() => {
-      window.location.href = "pending.html";
-    }, 1200);
+    statusInfo.textContent = "Contrato gerado, mas não recebi o link do documento.";
+    __submitting = false;
+    generateButton.disabled = false;
 
   } catch (err) {
     console.error(err);
-    statusInfo.textContent = `Erro ao gerar: ${String(err?.message || err)}`;
+    statusInfo.textContent = `Erro: ${String(err?.message || err)}`;
+    __submitting = false;
     generateButton.disabled = false;
   }
 });
+
 };
+
+function initPlacePickerToForm() {
+  const picker = document.getElementById("placePicker");
+  const endEl = document.getElementById("endereco");
+  const cityEl = document.getElementById("cidade");
+  if (!picker || !endEl || !cityEl) return;
+
+  const pick = (components, type) =>
+    (components || []).find(c => (c.types || []).includes(type))?.longText ||
+    (components || []).find(c => (c.types || []).includes(type))?.shortText ||
+    "";
+
+  const getCidadeBR = (components) =>
+    pick(components, "locality") ||
+    pick(components, "administrative_area_level_2") ||
+    pick(components, "sublocality") ||
+    "";
+
+  picker.addEventListener("gmpx-placechange", () => {
+    const place = picker.value;
+    if (!place) return;
+
+    if (place.formattedAddress) endEl.value = place.formattedAddress;
+
+    const cidade = getCidadeBR(place.addressComponents);
+    if (cidade) cityEl.value = cidade;
+  });
+}
 
 if (page === "public") setupPublicForm();
 if (page === "admin-login") setupAdminLogin();
