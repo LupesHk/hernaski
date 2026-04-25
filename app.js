@@ -256,6 +256,28 @@ const sendLeadFetchKeepalive = async (payload) => {
 /* =========================
    CPF: máscara ao digitar
    ========================= */
+const formatNome = (nome) => {
+  if (!nome) return "";
+
+  const lower = String(nome).toLowerCase().trim();
+
+  const excecoes = ["da", "de", "do", "das", "dos", "e"];
+
+  return lower
+    .split(" ")
+    .filter(Boolean)
+    .map((palavra, i) => {
+      if (excecoes.includes(palavra) && i !== 0) return palavra;
+      return palavra.charAt(0).toUpperCase() + palavra.slice(1);
+    })
+    .join(" ");
+};
+
+  const formatProfissao = (profissao) => {
+  if (!profissao) return "";
+  return String(profissao).toLowerCase().trim();
+};
+
 const cpfDigits = (cpf) => String(cpf || "").replace(/\D/g, "");
 
 const formatCPF = (digitsOrCpf) => {
@@ -286,7 +308,36 @@ const bindCpfMask = (inputEl) => {
   inputEl.addEventListener("blur", apply);
   apply();
 };
-/* ========================= */
+
+const phoneDigits = (v) => String(v || "").replace(/\D/g, "");
+
+const formatPhone = (v) => {
+  const d = phoneDigits(v).slice(0, 11);
+
+  if (d.length <= 10) {
+    // fixo: (41) 3333-3333
+    return d.replace(/(\d{2})(\d{4})(\d{0,4})/, (_, a, b, c) =>
+      c ? `(${a}) ${b}-${c}` : `(${a}) ${b}`
+    );
+  }
+
+  // celular: (41) 99999-9999
+  return d.replace(/(\d{2})(\d{5})(\d{0,4})/, (_, a, b, c) =>
+    c ? `(${a}) ${b}-${c}` : `(${a}) ${b}`
+  );
+};
+
+const bindPhoneMask = (inputEl) => {
+  if (!inputEl) return;
+
+  const apply = () => {
+    inputEl.value = formatPhone(inputEl.value);
+  };
+
+  inputEl.addEventListener("input", apply);
+  inputEl.addEventListener("blur", apply);
+  apply();
+};
 
 const LEAD_QUEUE_KEY = "hernaski-lead-queue-v1";
 
@@ -327,7 +378,11 @@ const setupPublicForm = () => {
   const publicForm = document.getElementById("public-form");
   if (!publicForm) return;
 
-  // máscara CPF ao digitar (se você já colou bindCpfMask acima)
+  /* ===== FIX: telefone dentro do escopo correto ===== */
+  const phoneInput = publicForm.querySelector('input[name="telefone"]');
+  bindPhoneMask(phoneInput);
+  /* ===== END FIX ===== */
+
   const cpfInput = publicForm.querySelector('input[name="cpf"]');
   bindCpfMask(cpfInput);
 
@@ -367,14 +422,15 @@ const setupPublicForm = () => {
       action: "lead",
       sheetId: SHEET_ID,
       requestId: crypto.randomUUID(),
-      nome: data.nome || "",
-      // manda CPF padronizado com máscara (ou troque pra cpfDigits(...) se preferir só números)
+      nome: formatNome(data.nome || ""),
       cpf: formatCPF(data.cpf || ""),
       rg: data.rg || "",
       nascimento: formatDate(data.dataNascimento),
       estadoCivil: data.estadoCivil || "",
-      profissao: data.profissao || "",
+      profissao: formatProfissao(data.profissao || ""),
       email: data.email || "",
+      telefone: data.telefone || "",
+      assinatura: data.assinatura || "",
     };
 
     try {
@@ -757,11 +813,13 @@ const setupDetailsPage = () => {
         id: crypto.randomUUID(),
         nome: item?.nome || "",
         email: item?.email || "",
+        telefone: item?.telefone || "",
         estadoCivil: item?.estadoCivil || "",
         nascimento: item?.nascimento || "",
         profissao: item?.profissao || "",
         rg: item?.rg || "",
         cpf: item?.cpf || "",
+        assinatura: item?.assinatura || "",
 
         endereco: d2.endereco || "",
         cidade: d2.cidade || "",
@@ -814,6 +872,8 @@ const setupDetailsPage = () => {
   };
 
   let __submitting = false;
+  
+
 
 sensitiveForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -866,11 +926,13 @@ sensitiveForm.addEventListener("submit", async (event) => {
       id: crypto.randomUUID(),
       nome: item?.nome || "",
       email: item?.email || "",
+      telefone: item?.telefone || "",
       estadoCivil: item?.estadoCivil || "",
       nascimento: item?.nascimento || "",
       profissao: item?.profissao || "",
       rg: item?.rg || "",
       cpf: item?.cpf || "",
+      assinatura: item?.assinatura || "",
 
       endereco: d2.endereco || "",
       cidade: d2.cidade || "",

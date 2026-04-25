@@ -331,9 +331,14 @@ main {
 
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1.5rem;
   margin-top: 1.5rem;
+}
+
+.form-grid > :nth-last-child(1):nth-child(3n+1) {
+  grid-column: span 3;
+  justify-self: center;
 }
 
 label {
