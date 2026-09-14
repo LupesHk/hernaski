@@ -5,17 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Dados do contrato - Hernaski</title>
     <link rel="stylesheet" href="../styles.css" />
-
-    <!-- Google Maps Place Picker (Extended Component Library) -->
-    <script
-      type="module"
-      src="https://ajax.googleapis.com/ajax/libs/@googlemaps/extended-component-library/0.6.11/index.min.js"
-    ></script>
-
-    <gmpx-api-loader
-      key="AIzaSyBBAKaw4LHq-a4WwL0CY4EM-eVp-YjF5rU"
-      solution-channel="GMP_GE_placepicker_v2"
-    ></gmpx-api-loader>
   </head>
 
   <body data-page="admin-details">
@@ -41,12 +30,26 @@
 
         <form id="sensitive-form">
           <div class="form-grid">
-            <label>
+            <label class="address-autocomplete">
               Endereço completo
-              <div id="place-picker-box">
-                <gmpx-place-picker
-                  id="placePicker"
-                ></gmpx-place-picker>
+
+              <div id="address-search-box">
+                <input
+                  type="text"
+                  id="enderecoBusca"
+                  name="enderecoBusca"
+                  placeholder="Digite o endereço..."
+                  autocomplete="off"
+                  aria-autocomplete="list"
+                  aria-controls="address-suggestions"
+                />
+
+                <div
+                  id="address-suggestions"
+                  class="address-suggestions"
+                  role="listbox"
+                  hidden
+                ></div>
               </div>
 
               <input type="hidden" id="endereco" name="endereco" required />

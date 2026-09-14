@@ -978,32 +978,673 @@ sensitiveForm.addEventListener("submit", async (event) => {
 };
 
 function initPlacePickerToForm() {
-  const picker = document.getElementById("placePicker");
+  const searchEl = document.getElementById("enderecoBusca");
   const endEl = document.getElementById("endereco");
   const cityEl = document.getElementById("cidade");
-  if (!picker || !endEl || !cityEl) return;
+  const suggestionsEl = document.getElementById("address-suggestions");
 
-  const pick = (components, type) =>
-    (components || []).find(c => (c.types || []).includes(type))?.longText ||
-    (components || []).find(c => (c.types || []).includes(type))?.shortText ||
-    "";
+  if (!searchEl || !endEl || !cityEl || !suggestionsEl) return;
 
-  const getCidadeBR = (components) =>
-    pick(components, "locality") ||
-    pick(components, "administrative_area_level_2") ||
-    pick(components, "sublocality") ||
-    "";
+  const DEFAULT_UF = "PR";
+  const DEFAULT_CITY = "Pinhais";
 
-  picker.addEventListener("gmpx-placechange", () => {
-    const place = picker.value;
-    if (!place) return;
+  const MIN_CHARS = 3;
+  const DEBOUNCE_MS = 500;
+  const MAX_RESULTS = 10;
 
-    if (place.formattedAddress) endEl.value = place.formattedAddress;
+  let debounceTimer = null;
+  let controller = null;
+  let currentResults = [];
+  const cache = new Map();
 
-    const cidade = getCidadeBR(place.addressComponents);
-    if (cidade) cityEl.value = cidade;
-  });
+  function normalize(value) {
+    return String(value || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function extractHouseNumber(value) {
+    const match = String(value || "").match(
+      /\b(\d+[A-Za-z]?(?:[-/]\d+)?)\b\s*$/i
+    );
+
+    return match ? match[1] : "";
+  }
+
+  function removeHouseNumber(value, number) {
+    if (!number) return String(value || "").trim();
+
+    const escaped = number.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&"
+    );
+
+    return String(value || "")
+      .replace(
+        new RegExp(`[\\s,]+${escaped}\\s*$`, "i"),
+        ""
+      )
+      .trim();
+  }
+
+  function cleanStreetQuery(value) {
+    let text = String(value || "").trim();
+
+    text = removeHouseNumber(
+      text,
+      extractHouseNumber(text)
+    );
+
+    /*
+     * Retira termos comuns que podem aparecer junto
+     * na digitação e atrapalhar o ViaCEP.
+     */
+    text = text
+      .replace(/\bcep\b/gi, "")
+      .replace(/\bbrasil\b/gi, "")
+      .trim();
+
+    return text;
+  }
+
+  function getCityFromInput(query) {
+    const normalized = normalize(query);
+
+    /*
+     * Se o usuário explicitamente escrever uma cidade,
+     * tentamos usá-la.
+     */
+    const knownCities = [
+      "pinhais",
+      "curitiba",
+      "sao jose dos pinhais",
+      "colombo",
+      "piraquara",
+      "quatro barras",
+      "campina grande do sul",
+      "campo largo",
+      "araucaria",
+      "almirante tamandare",
+    ];
+
+    for (const city of knownCities) {
+      if (normalized.includes(city)) {
+        return city;
+      }
+    }
+
+    return "";
+  }
+
+  function cityDisplayName(city) {
+    const value = normalize(city);
+
+    const map = {
+      pinhais: "Pinhais",
+      curitiba: "Curitiba",
+      "sao jose dos pinhais": "São José dos Pinhais",
+      colombo: "Colombo",
+      piraquara: "Piraquara",
+      "quatro barras": "Quatro Barras",
+      "campina grande do sul": "Campina Grande do Sul",
+      "campo largo": "Campo Largo",
+      araucaria: "Araucária",
+      "almirante tamandare": "Almirante Tamandaré",
+    };
+
+    return map[value] || city;
+  }
+
+  function cityScore(city) {
+    const value = normalize(city);
+
+    const scores = {
+      pinhais: 1000,
+      curitiba: 900,
+      "sao jose dos pinhais": 850,
+      colombo: 800,
+      piraquara: 750,
+      "quatro barras": 700,
+      "campina grande do sul": 700,
+      "campo largo": 650,
+      araucaria: 650,
+      "almirante tamandare": 650,
+    };
+
+    return scores[value] || 300;
+  }
+
+  function scoreResult(result, query, explicitCity) {
+    let score = 0;
+
+    const city = normalize(result.localidade);
+    const logradouro = normalize(result.logradouro);
+    const streetQuery = normalize(
+      cleanStreetQuery(query)
+    );
+
+    /*
+     * Cidade explicitamente escrita ganha prioridade máxima.
+     */
+    if (
+      explicitCity &&
+      city === normalize(explicitCity)
+    ) {
+      score += 3000;
+    }
+
+    /*
+     * Depois, nossa prioridade regional.
+     */
+    score += cityScore(result.localidade);
+
+    /*
+     * Quanto mais parecido o nome do logradouro,
+     * melhor.
+     */
+    if (
+      streetQuery &&
+      logradouro === streetQuery
+    ) {
+      score += 2000;
+    } else if (
+      streetQuery &&
+      logradouro.includes(streetQuery)
+    ) {
+      score += 1000;
+    }
+
+    /*
+     * Bairro e CEP presentes tornam o resultado mais útil.
+     */
+    if (result.bairro) score += 100;
+    if (result.cep) score += 100;
+
+    return score;
+  }
+
+  function formatAddress(result, typedNumber) {
+    const parts = [];
+
+    const logradouro =
+      String(result.logradouro || "").trim();
+
+    const bairro =
+      String(result.bairro || "").trim();
+
+    const cep =
+      String(result.cep || "").trim();
+
+    if (logradouro) {
+      parts.push(
+        typedNumber
+          ? `${logradouro}, ${typedNumber}`
+          : logradouro
+      );
+    }
+
+    if (
+      bairro &&
+      normalize(bairro) !==
+        normalize(result.localidade)
+    ) {
+      parts.push(bairro);
+    }
+
+    /*
+     * CEP entra porque veio da própria resposta do ViaCEP.
+     */
+    if (cep) {
+      parts.push(cep);
+    }
+
+    return parts.join(", ");
+  }
+
+  function hideSuggestions() {
+    suggestionsEl.hidden = true;
+    suggestionsEl.innerHTML = "";
+    currentResults = [];
+  }
+
+  function showLoading() {
+    suggestionsEl.innerHTML = `
+      <div class="address-suggestion address-loading">
+        Buscando endereços...
+      </div>
+    `;
+
+    suggestionsEl.hidden = false;
+  }
+
+  function showMessage(message) {
+    suggestionsEl.innerHTML = `
+      <div class="address-suggestion address-empty">
+        ${escapeHtml(message)}
+      </div>
+    `;
+
+    suggestionsEl.hidden = false;
+  }
+
+  function renderResults(results, query, explicitCity) {
+    const sorted = [...results].sort(
+      (a, b) =>
+        scoreResult(b, query, explicitCity) -
+        scoreResult(a, query, explicitCity)
+    );
+
+    currentResults = sorted.slice(
+      0,
+      MAX_RESULTS
+    );
+
+    if (!currentResults.length) {
+      showMessage("Nenhum endereço encontrado.");
+      return;
+    }
+
+    const typedNumber =
+      extractHouseNumber(query);
+
+    suggestionsEl.innerHTML =
+      currentResults
+        .map((result, index) => {
+          const logradouro =
+            result.logradouro || "";
+
+          const bairro =
+            result.bairro || "";
+
+          const cidade =
+            result.localidade || "";
+
+          const uf =
+            result.uf || DEFAULT_UF;
+
+          const cep =
+            result.cep || "";
+
+          const title = typedNumber
+            ? `${logradouro}, ${typedNumber}`
+            : logradouro;
+
+          const subtitle = [
+            bairro,
+            cidade,
+            uf,
+            cep,
+          ]
+            .filter(Boolean)
+            .join(" - ");
+
+          return `
+            <button
+              type="button"
+              class="address-suggestion"
+              role="option"
+              data-index="${index}"
+            >
+              <strong>
+                ${escapeHtml(title)}
+              </strong>
+
+              <span>
+                ${escapeHtml(subtitle)}
+              </span>
+            </button>
+          `;
+        })
+        .join("");
+
+    suggestionsEl.hidden = false;
+  }
+
+  function selectResult(result) {
+    const originalQuery =
+      searchEl.value.trim();
+
+    const typedNumber =
+      extractHouseNumber(originalQuery);
+
+    /*
+     * O número é sempre o que o usuário digitou.
+     * O ViaCEP fornece o logradouro/bairro/cidade/CEP.
+     */
+    const formatted =
+      formatAddress(
+        result,
+        typedNumber
+      );
+
+    endEl.value = formatted;
+
+    cityEl.value =
+      result.localidade || "";
+
+    searchEl.value = formatted;
+
+    hideSuggestions();
+
+    endEl.dispatchEvent(
+      new Event("change", {
+        bubbles: true,
+      })
+    );
+
+    cityEl.dispatchEvent(
+      new Event("change", {
+        bubbles: true,
+      })
+    );
+  }
+
+  async function fetchViaCep(
+    uf,
+    city,
+    street,
+    signal
+  ) {
+    const url =
+      "https://viacep.com.br/ws/" +
+      `${encodeURIComponent(uf)}/` +
+      `${encodeURIComponent(city)}/` +
+      `${encodeURIComponent(street)}/json/`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      signal,
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `ViaCEP HTTP ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+
+    if (
+      !Array.isArray(data) ||
+      data.length === 0
+    ) {
+      return [];
+    }
+
+    return data;
+  }
+
+  async function search(query) {
+    const normalizedQuery =
+      normalize(query);
+
+    if (!normalizedQuery) {
+      hideSuggestions();
+      return;
+    }
+
+    const typedNumber =
+      extractHouseNumber(query);
+
+    const street =
+      cleanStreetQuery(query);
+
+    if (street.length < 2) {
+      hideSuggestions();
+      return;
+    }
+
+    const explicitCity =
+      getCityFromInput(query);
+
+    /*
+     * Para manter o uso simples:
+     *
+     * 1. Se o usuário escreveu uma cidade,
+     *    pesquisamos nela.
+     *
+     * 2. Caso contrário, pesquisamos primeiro Pinhais.
+     *
+     * 3. Depois usamos algumas cidades prioritárias da RMC.
+     */
+    let cities = [];
+
+    if (explicitCity) {
+      cities = [
+        cityDisplayName(explicitCity),
+      ];
+    } else {
+      cities = [
+        DEFAULT_CITY,
+        "Curitiba",
+        "São José dos Pinhais",
+        "Colombo",
+        "Piraquara",
+        "Quatro Barras",
+        "Campina Grande do Sul",
+        "Campo Largo",
+      ];
+    }
+
+    const cacheKey = [
+      DEFAULT_UF,
+      cities.join("|"),
+      normalize(street),
+    ].join("::");
+
+    if (cache.has(cacheKey)) {
+      renderResults(
+        cache.get(cacheKey),
+        query,
+        explicitCity
+      );
+
+      return;
+    }
+
+    if (controller) {
+      controller.abort();
+    }
+
+    controller =
+      new AbortController();
+
+    showLoading();
+
+    try {
+      /*
+       * Busca em paralelo nas cidades prioritárias.
+       *
+       * O resultado final é ordenado no navegador.
+       */
+      const responses =
+        await Promise.all(
+          cities.map((city) =>
+            fetchViaCep(
+              DEFAULT_UF,
+              city,
+              street,
+              controller.signal
+            )
+          )
+        );
+
+      const merged = [];
+      const seen = new Set();
+
+      for (const list of responses) {
+        for (const result of list) {
+          const key = [
+            result.cep,
+            result.logradouro,
+            result.bairro,
+            result.localidade,
+          ]
+            .map(normalize)
+            .join("|");
+
+          if (!seen.has(key)) {
+            seen.add(key);
+            merged.push(result);
+          }
+        }
+      }
+
+      cache.set(
+        cacheKey,
+        merged
+      );
+
+      renderResults(
+        merged,
+        query,
+        explicitCity
+      );
+    } catch (error) {
+      if (
+        error &&
+        error.name === "AbortError"
+      ) {
+        return;
+      }
+
+      console.error(
+        "Erro ao buscar endereço no ViaCEP:",
+        error
+      );
+
+      showMessage(
+        "Não foi possível buscar os endereços."
+      );
+    }
+  }
+
+  searchEl.addEventListener(
+    "input",
+    () => {
+      const query =
+        searchEl.value.trim();
+
+      /*
+       * Alterou o endereço:
+       * invalidamos os valores selecionados anteriormente.
+       */
+      endEl.value = "";
+      cityEl.value = "";
+
+      clearTimeout(
+        debounceTimer
+      );
+
+      if (
+        controller &&
+        query.length < MIN_CHARS
+      ) {
+        controller.abort();
+      }
+
+      if (
+        query.length < MIN_CHARS
+      ) {
+        hideSuggestions();
+        return;
+      }
+
+      debounceTimer =
+        setTimeout(() => {
+          search(query);
+        }, DEBOUNCE_MS);
+    }
+  );
+
+  suggestionsEl.addEventListener(
+    "click",
+    (event) => {
+      const button =
+        event.target.closest(
+          "[data-index]"
+        );
+
+      if (!button) return;
+
+      const index = Number(
+        button.dataset.index
+      );
+
+      if (
+        !Number.isInteger(index) ||
+        !currentResults[index]
+      ) {
+        return;
+      }
+
+      selectResult(
+        currentResults[index]
+      );
+    }
+  );
+
+  searchEl.addEventListener(
+    "keydown",
+    (event) => {
+      if (
+        event.key === "Escape"
+      ) {
+        hideSuggestions();
+        return;
+      }
+
+      if (
+        event.key === "Enter" &&
+        currentResults.length &&
+        !suggestionsEl.hidden
+      ) {
+        event.preventDefault();
+
+        selectResult(
+          currentResults[0]
+        );
+      }
+    }
+  );
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (
+        !event.target.closest(
+          "#address-search-box"
+        )
+      ) {
+        hideSuggestions();
+      }
+    }
+  );
+
+  /*
+   * Caso a página carregue uma solicitação
+   * que já possua endereço salvo.
+   */
+  if (endEl.value) {
+    searchEl.value =
+      endEl.value;
+  }
 }
+
 
 if (page === "public") setupPublicForm();
 if (page === "admin-login") setupAdminLogin();
